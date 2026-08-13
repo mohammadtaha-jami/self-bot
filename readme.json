@@ -1,0 +1,45 @@
+{
+    "project_name": "Telegram Social Listener",
+    "architecture_pattern": "Event-Driven & Modular Architecture",
+    "tech_stack": {
+      "language": "Python 3.11+",
+      "api_framework": "FastAPI",
+      "telegram_library": "Telethon / Pyrogram",
+      "database": "PostgreSQL",
+      "cache_and_queue": "Redis",
+      "task_runner": "Celery",
+      "containerization": "Docker & Docker Compose"
+    },
+    "modules": [
+      {
+        "id": 1,
+        "name": "User & Subscription Management",
+        "tech": "FastAPI + PostgreSQL",
+        "responsibility": "Manages user profiles, keywords, subscription dates, and Telegram session strings."
+      },
+      {
+        "id": 2,
+        "name": "Telegram Listener Engine (Producer)",
+        "tech": "Telethon (AsyncIO)",
+        "responsibility": "Listens to assigned Telegram groups and pushes raw message data to Redis Queue immediately."
+      },
+      {
+        "id": 3,
+        "name": "Matching & NLP Engine (Consumer)",
+        "tech": "Celery Worker + Hazm / RapidFuzz",
+        "responsibility": "Fetches raw messages from Redis, normalizes text, compares keywords against Redis cache, and calculates match percentage."
+      },
+      {
+        "id": 4,
+        "name": "Notification Service",
+        "tech": "Telethon / Bot API",
+        "responsibility": "Sends high-score lead alerts directly to the user's Saved Messages or Notification Bot."
+      }
+    ],
+    "data_flow": [
+      "User configures keywords via API/Bot -> Saved to PostgreSQL & cached in Redis",
+      "Listener catches group message -> Pushes JSON payload to Redis Queue",
+      "Celery Worker pops payload -> Evaluates against active keywords in Redis Cache",
+      "Match Score >= Threshold -> Triggers Notification Service to dispatch lead"
+    ]
+  }
