@@ -9,3 +9,4 @@ celery>=5.4.0
 pydantic-settings>=2.6.0
 sqladmin>=0.20.0
 python-dotenv>=1.0.1
+PySocks
