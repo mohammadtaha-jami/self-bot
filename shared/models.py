@@ -33,18 +33,19 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 # استفاده از Base یکپارچه پروژه جهت شناسایی توسط Alembic و Core
-from core.database import Base
+from core.database import Base as BaseModel
 from shared.enums import FeedbackTypeEnum, KeywordTypeEnum, LeadLevelEnum
 
 
-class User(Base):
+class User(BaseModel):
     """SaaS tenant / account owner."""
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
     full_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     business_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -57,7 +58,7 @@ class User(Base):
     leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="user", cascade="all, delete-orphan")
 
 
-class TelegramSession(Base):
+class TelegramSession(BaseModel):
     """Telethon StringSession per user."""
 
     __tablename__ = "telegram_sessions"
@@ -73,7 +74,7 @@ class TelegramSession(Base):
     user: Mapped["User"] = relationship("User", back_populates="sessions")
 
 
-class Keyword(Base):
+class Keyword(BaseModel):
     """User-defined matching rules."""
 
     __tablename__ = "keywords"
@@ -89,7 +90,7 @@ class Keyword(Base):
     user: Mapped["User"] = relationship("User", back_populates="keywords")
 
 
-class Source(Base):
+class Source(BaseModel):
     """Monitored Telegram channels/groups."""
 
     __tablename__ = "sources"
@@ -106,7 +107,7 @@ class Source(Base):
     messages: Mapped[List["Message"]] = relationship("Message", back_populates="source")
 
 
-class Person(Base):
+class Person(BaseModel):
     """Identified contact / author profile."""
 
     __tablename__ = "persons"
@@ -125,7 +126,7 @@ class Person(Base):
     leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="person")
 
 
-class Message(Base):
+class Message(BaseModel):
     """Raw ingested Telegram message."""
 
     __tablename__ = "messages"
@@ -144,7 +145,7 @@ class Message(Base):
     leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="message")
 
 
-class Lead(Base):
+class Lead(BaseModel):
     """Scored opportunity derived from a Message."""
 
     __tablename__ = "leads"
@@ -165,7 +166,7 @@ class Lead(Base):
     feedbacks: Mapped[List["Feedback"]] = relationship("Feedback", back_populates="lead")
 
 
-class Feedback(Base):
+class Feedback(BaseModel):
     """User quality signal on a Lead."""
 
     __tablename__ = "feedbacks"
