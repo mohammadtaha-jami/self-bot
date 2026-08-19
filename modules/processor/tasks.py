@@ -1,19 +1,27 @@
 """Async processing tasks for message ingestion and lead generation."""
 
 from core.logger import setup_logging
+from modules.processor.worker import celery_app
 
 logger = setup_logging(__name__)
 
 
-async def process_raw_message(message_id: str) -> None:
+@celery_app.task(name="tasks.process_raw_message")
+def process_raw_message(payload: dict) -> dict:
     """
     Full processing pipeline for a single raw message.
 
     Steps: persist → match keywords → NLP score → create lead → notify.
 
     Args:
-        message_id: Unique identifier of the queued raw message.
+        payload: Dict containing message text, metadata, chat_id, etc.
     """
+    message_id = payload.get("message_id")
+    text = payload.get("text", "")
+    chat_title = payload.get("chat_title", "Unknown")
+
+    logger.info("Processing message %s from '%s' (placeholder)", message_id, chat_title)
+
     # TODO: Orchestrate matching, NLP, persistence, and notification
-    logger.info("Processing message %s (placeholder)", message_id)
-    raise NotImplementedError("Processing task not yet implemented")
+
+    return {"status": "success", "message_id": message_id}
