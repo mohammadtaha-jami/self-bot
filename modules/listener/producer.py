@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import redis.asyncio as aioredis
 
 from core.logger import setup_logging
+from modules.processor.worker import celery_app
 
 logger = setup_logging(__name__)
 load_dotenv()
@@ -35,33 +36,23 @@ async def get_redis_client() -> aioredis.Redis:
     return _redis_client
 
 
-async def publish_raw_message(payload: dict[str, Any]) -> None:
+async def publish_raw_message(payload: dict) -> None:
     """
-    Push a serialized raw message onto the Redis processing queue.
-
-    Args:
-        payload: Dict containing message_id, source_id, text, metadata, etc.
+    Dispatch a raw message payload directly to the Celery task queue.
     """
     try:
-        client = await get_redis_client()
-        serialized_payload = json.dumps(payload, ensure_ascii=False)
-        
-        # اضافه کردن پیام به انتهای صف
-        await client.rpush(MESSAGE_QUEUE_KEY, serialized_payload)
-        
-        logger.debug(
-            "Published raw message to queue [%s]: %s", 
-            MESSAGE_QUEUE_KEY, 
-            payload.get("message_id")
+        # ارسال مستقیم تسک به ورکر Celery
+        task = celery_app.send_task("tasks.process_raw_message", args=[payload])
+
+        logger.info(
+            "🚀 Task dispatched to Celery! Msg ID: %s | Task ID: %s",
+            payload.get("message_id"),
+            task.id
         )
     except Exception as e:
-        logger.error("❌ Failed to publish raw message to Redis queue: %s", e)
+        logger.error("❌ Failed to dispatch task to Celery: %s", e, exc_info=True)
 
 
 async def close_producer() -> None:
-    """Close the Redis connection safely when shutting down."""
-    global _redis_client
-    if _redis_client is not None:
-        await _redis_client.close()
-        _redis_client = None
-        logger.info("🔌 Redis producer connection closed.")
+    """No-op for backward compatibility."""
+    pass

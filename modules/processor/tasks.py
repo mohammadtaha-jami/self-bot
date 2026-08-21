@@ -1,8 +1,13 @@
 """Async processing tasks for message ingestion and lead generation."""
 
+import asyncio
 from core.logger import setup_logging
+from modules.processor.matching import MatchConfig, match_keywords
+from modules.processor.nlp import clean_text
+from modules.processor.presets import get_rules_for_business_types
 from modules.processor.worker import celery_app
-
+from modules.notification.formatter import format_lead_message
+from modules.notification.sender import send_lead_notification
 logger = setup_logging(__name__)
 
 
@@ -11,17 +16,84 @@ def process_raw_message(payload: dict) -> dict:
     """
     Full processing pipeline for a single raw message.
 
-    Steps: persist → match keywords → NLP score → create lead → notify.
+    Steps: Extract -> Load Presets -> Clean text -> Match keywords -> Evaluate lead level.
 
     Args:
-        payload: Dict containing message text, metadata, chat_id, etc.
+        payload: Dict containing message text, metadata, business_type, custom keywords, etc.
     """
     message_id = payload.get("message_id")
-    text = payload.get("text", "")
+    raw_text = payload.get("text", "")
     chat_title = payload.get("chat_title", "Unknown")
+    business_type = payload.get("business_type")  # مثلا "programmer" یا "programmer, web_designer"
 
-    logger.info("Processing message %s from '%s' (placeholder)", message_id, chat_title)
+    if not raw_text:
+        logger.warning("Received empty message payload for ID: %s", message_id)
+        return {"status": "ignored", "reason": "empty_text", "message_id": message_id}
 
-    # TODO: Orchestrate matching, NLP, persistence, and notification
+    logger.info(
+        "Processing message %s from '%s' (Business Types: %s)",
+        message_id,
+        chat_title,
+        business_type,
+    )
 
-    return {"status": "success", "message_id": message_id}
+    # ۱. دریافت کلمات پیش‌فرض دسته‌بندی(ها) از فایل‌های JSON
+    preset_rules = get_rules_for_business_types(business_type)
+
+    # ۲. تعیین کلمات کلیدی (اولویت با کلمات اختصاصی پویلود است، در غیر این صورت از پریست استفاده می‌شود)
+    keywords = payload.get("keywords") or preset_rules["keywords"]
+    negative_keywords = (
+        payload.get("negative_keywords") or preset_rules["negative_keywords"]
+    )
+    fuzzy_threshold = payload.get("fuzzy_threshold", 85.0)
+
+    # اگر هیچ کلمه‌ای تنظیم نشده باشد، نیازی به پردازش متن نیست
+    if not keywords:
+        logger.info(
+            "No keywords defined for message %s (business_type: %s). Ignored.",
+            message_id,
+            business_type,
+        )
+        return {
+            "status": "ignored",
+            "reason": "no_keywords_configured",
+            "message_id": message_id,
+        }
+
+    # ۳. پاک‌سازی و نرمال‌سازی متن
+    cleaned_text = clean_text(raw_text)
+
+    config = MatchConfig(
+        keywords=keywords,
+        negative_keywords=negative_keywords,
+        fuzzy_threshold=fuzzy_threshold,
+    )
+
+    # ۴. اجرای الگوریتم تطبیق کلمات کلیدی
+    match_result = match_keywords(raw_text, config)
+
+    if not match_result.matched:
+        logger.info("Message %s ignored: %s", message_id, match_result.reason)
+        return {
+            "status": "ignored",
+            "reason": match_result.reason,
+            "message_id": message_id,
+        }
+
+    # ۵. شناسایی لید موفق
+    logger.info(
+        "Lead detected! Msg: %s | Level: %s | Score: %.1f | Keywords: %s",
+        message_id,
+        match_result.lead_level.value,
+        match_result.score,
+        match_result.matched_keywords,
+    )
+
+    return {
+        "status": "lead_created",
+        "message_id": message_id,
+        "lead_level": match_result.lead_level.value,
+        "matched_keywords": match_result.matched_keywords,
+        "score": match_result.score,
+        "cleaned_text": cleaned_text,
+    }

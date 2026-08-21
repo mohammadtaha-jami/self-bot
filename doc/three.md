@@ -7,6 +7,11 @@ self-bot/
 ├── requirements.txt
 ├── README.md
 │
+├── config/                         
+│   └── presets/                    
+│       ├── programmer.json         
+│       ├── web_designer.json       
+│       └── seo_specialist.json
 ├── core/
 │   ├── __init__.py
 │   ├── config.py         # Pydantic BaseSettings + get_settings()
@@ -26,7 +31,7 @@ self-bot/
     ├── processor/        # Phase 3
     │   ├── __init__.py, worker.py, tasks.py, matching.py, nlp.py
     ├── notification/     # Phase 4
-    │   ├── __init__.py, sender.py
+    │   ├── __init__.py, sender.py, formatter.py
     └── admin_and_api/    # Phase 5
         ├── __init__.py, main.py, admin.py, schemas.py
         └── routers/
