@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
     secret_key: str = "changeme"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
 
     # PostgreSQL
     postgres_user: str = "telegram_listener"

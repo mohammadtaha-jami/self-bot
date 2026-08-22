@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from core.logger import setup_logging
+from modules.admin_and_api.routers import auth
 
 logger = setup_logging(__name__)
 
@@ -15,9 +16,13 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
-    # TODO: Register routers, admin panel, lifespan hooks
-    logger.info("FastAPI application created (placeholder)")
+    app.include_router(
+        auth.router,
+        prefix="/api/v1/auth",
+        tags=["Authentication"],
+    )
 
+    logger.info("FastAPI application created")
     return app
 
 
