@@ -11,3 +11,5 @@ sqladmin>=0.20.0
 python-dotenv>=1.0.1
 PySocks
 rapidfuzz
+alembic 
+psycopg2-binary
