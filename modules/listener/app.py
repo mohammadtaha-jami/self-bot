@@ -36,7 +36,7 @@ async def main() -> None:
 
     try:
         # ۳. ثبت هندرها
-        register_handlers(client)
+        register_handlers(client, session_record.session_string)
 
         logger.info("🚀 Listener service is running and listening for group messages...")
         await client.run_until_disconnected()  # type: ignore

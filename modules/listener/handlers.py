@@ -7,18 +7,14 @@ from modules.listener.producer import publish_raw_message
 logger = setup_logging(__name__)
 
 
-async def on_new_message(event: events.NewMessage.Event) -> None:
-    """
-    Handle a single incoming NewMessage event and forward payload to Celery.
-    """
+async def on_new_message(event: events.NewMessage.Event, session_string: str) -> None:
+    """Handle a single incoming NewMessage event and forward payload to Celery."""
     if not (event.is_group or event.is_channel):
         return
 
     chat = await event.get_chat()
     sender = await event.get_sender()
 
-    # ⚠️ نکته مهم: مقدار business_type کاربر باید از دیتابیس یا کش خوانده شود
-    # در اینجا برای تست از 'programmer, web_designer' یا متغیر دیتابیس استفاده کنید
     user_business_type = "programmer, web_designer" 
 
     message_data = {
@@ -30,6 +26,7 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
         "text": event.raw_text,
         "business_type": user_business_type,
         "date": event.date.isoformat() if event.date else None,
+        "session_string": session_string,  # 👈 اضافه شد
     }
 
     logger.info(
@@ -37,10 +34,13 @@ async def on_new_message(event: events.NewMessage.Event) -> None:
         f"User {message_data['sender_id']}: {message_data['text'][:30]}..."
     )
 
-    # ارسال به Celery
     await publish_raw_message(message_data)
 
 
-def register_handlers(client) -> None:
-    client.add_event_handler(on_new_message, events.NewMessage(incoming=True))
+def register_handlers(client, session_string: str) -> None:
+    """Register event handlers with attached session info."""
+    async def handler(event):
+        await on_new_message(event, session_string)
+
+    client.add_event_handler(handler, events.NewMessage(incoming=True))
     logger.info("Event handlers successfully registered.")

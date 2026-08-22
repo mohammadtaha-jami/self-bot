@@ -1,6 +1,8 @@
 """Async processing tasks for message ingestion and lead generation."""
 
 import asyncio
+import os
+
 from core.logger import setup_logging
 from modules.processor.matching import MatchConfig, match_keywords
 from modules.processor.nlp import clean_text
@@ -8,6 +10,7 @@ from modules.processor.presets import get_rules_for_business_types
 from modules.processor.worker import celery_app
 from modules.notification.formatter import format_lead_message
 from modules.notification.sender import send_lead_notification
+
 logger = setup_logging(__name__)
 
 
@@ -89,6 +92,18 @@ def process_raw_message(payload: dict) -> dict:
         match_result.matched_keywords,
     )
 
+    lead_data = {
+        "lead_level": match_result.lead_level.value,
+        "matched_keywords": match_result.matched_keywords,
+        "score": match_result.score,
+    }
+    message_text = format_lead_message(payload, lead_data)
+    session_string = payload.get("session_string")
+    celery_app.send_task(
+        "tasks.publish_lead_notification",
+        args=[session_string, message_text],
+    )
+
     return {
         "status": "lead_created",
         "message_id": message_id,
@@ -97,3 +112,19 @@ def process_raw_message(payload: dict) -> dict:
         "score": match_result.score,
         "cleaned_text": cleaned_text,
     }
+
+
+@celery_app.task(name="tasks.publish_lead_notification")
+def publish_lead_notification(session_string: str, message_text: str) -> dict:
+    """Send a formatted lead alert to Telegram Saved Messages."""
+    api_id = os.getenv("TELEGRAM_API_ID")
+    api_hash = os.getenv("TELEGRAM_API_HASH")
+    sent = asyncio.run(
+        send_lead_notification(
+            int(api_id) if api_id else 0,
+            api_hash or "",
+            session_string or "",
+            message_text,
+        )
+    )
+    return {"status": "sent" if sent else "failed"}
