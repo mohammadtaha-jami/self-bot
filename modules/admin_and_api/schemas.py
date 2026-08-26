@@ -71,6 +71,42 @@ class KeywordCreate(BaseModel):
     is_active: bool = True
 
 
+class KeywordUpdate(BaseModel):
+    """Partial update for an existing keyword rule."""
+
+    text: Optional[str] = Field(default=None, max_length=100)
+    keyword_type: Optional[KeywordTypeEnum] = None
+    weight: Optional[float] = Field(default=None, ge=0)
+
+
+class KeywordResponse(BaseModel):
+    """Public representation of a keyword row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    word: str
+    type: KeywordTypeEnum
+    weight: float
+    created_at: datetime
+
+
+class LicenseStatusResponse(BaseModel):
+    """Current subscription validity for the authenticated user."""
+
+    user_id: int
+    is_valid: bool
+    days_remaining: int
+    subscription_end: Optional[datetime] = None
+
+
+class LicenseRenewRequest(BaseModel):
+    """Admin request to extend a user's subscription."""
+
+    user_id: int
+    extra_days: int = Field(..., gt=0)
+
+
 class FeedbackCreate(BaseModel):
     """Payload for submitting lead quality feedback."""
 

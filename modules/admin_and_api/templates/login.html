@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود به سیستم | Telegram Lead Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <style>
+        body { font-family: Vazirmatn, sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-2xl">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-emerald-400 mb-2">پنل هوشمند لید تلگرام</h1>
+            <p class="text-slate-400 text-sm">جهت ورود به سیستم مشخصات اکانت خود را وارد کنید</p>
+        </div>
+
+        <div id="error-alert" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm text-center"></div>
+
+        <form id="login-form" class="space-y-5">
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-1">نام کاربری</label>
+                <input type="text" id="username" required dir="ltr"
+                       class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 transition">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-1">رمز عبور</label>
+                <input type="password" id="password" required dir="ltr"
+                       class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 focus:outline-none focus:border-emerald-500 transition">
+            </div>
+
+            <button type="submit" id="submit-btn"
+                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 font-semibold text-white rounded-lg transition duration-200 shadow-lg shadow-emerald-600/20">
+                ورود به پنل
+            </button>
+        </form>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertBox = document.getElementById('error-alert');
+            const submitBtn = document.getElementById('submit-btn');
+            
+            alertBox.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'در حال بررسی...';
+
+            const formData = new URLSearchParams();
+            formData.append('username', document.getElementById('username').value);
+            formData.append('password', document.getElementById('password').value);
+
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('access_token', data.access_token);
+                    window.location.href = '/dashboard';
+                } else {
+                    alertBox.innerText = data.detail || 'نام کاربری یا رمز عبور اشتباه است.';
+                    alertBox.classList.remove('hidden');
+                }
+            } catch (err) {
+                alertBox.innerText = 'خطا در ارتباط با سرور.';
+                alertBox.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'ورود به پنل';
+            }
+        });
+    </script>
+</body>
+</html>

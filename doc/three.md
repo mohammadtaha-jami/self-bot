@@ -58,6 +58,8 @@ self-bot/
         ├── deps.py                 # OAuth2 bearer, get_db, get_current_user
         └── routers/
             ├── __init__.py
+            ├── keywords.py
+            ├── license.py
             ├── auth.py             # POST /register, POST /login, GET /me
             └── leads.py            # Leads endpoints (placeholder)
 ```

@@ -89,6 +89,7 @@ async def register(
     )
     db.add(user)
     await db.flush()
+    await db.commit()
     await db.refresh(user)
     return user
 

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پنل مدیریت | Self-Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <style>
+        body { font-family: 'Vazirmatn', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+    <!-- Navbar -->
+    <nav class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-4 space-x-reverse">
+            <h1 class="text-xl font-bold text-indigo-400">پنل مدیریت ربات تلگرام</h1>
+        </div>
+        <button onclick="logout()" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm transition">
+            خروج از حساب
+        </button>
+    </nav>
+
+    <!-- Main Layout -->
+    <div class="container mx-auto px-6 py-8">
+        
+        <!-- User Info Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <p class="text-slate-400 text-sm mb-1">خوش آمدید</p>
+                <h2 id="username" class="text-2xl font-bold text-slate-100">در حال دریافت...</h2>
+            </div>
+
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <p class="text-slate-400 text-sm mb-1">وضعیت لایسنس</p>
+                <span id="license-status" class="inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400">
+                    فعال
+                </span>
+            </div>
+
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <p class="text-slate-400 text-sm mb-1">نوع کسب‌وکار</p>
+                <h2 id="business-type" class="text-xl font-semibold text-indigo-300">-</h2>
+            </div>
+        </div>
+
+        <!-- Leads / Activity Section -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg">
+            <h3 class="text-lg font-bold mb-4 text-slate-200">آخرین لیدهای دریافت شده</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-slate-300">
+                    <thead class="bg-slate-700/50 text-slate-400 text-xs">
+                        <tr>
+                            <th class="p-3 rounded-r-lg">شناسه</th>
+                            <th class="p-3">کاربر</th>
+                            <th class="p-3">پیام</th>
+                            <th class="p-3 rounded-l-lg">تاریخ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leads-table">
+                        <tr class="border-b border-slate-700/50">
+                            <td class="p-3 text-slate-500" colspan="4">داده‌ای یافت نشد یا در حال بارگذاری است...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check Auth Token
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+            window.location.href = "/login";
+        }
+
+        // Fetch Current User
+        async function loadUserData() {
+            try {
+                const response = await fetch("/api/v1/auth/me", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById("username").innerText = data.full_name || data.username;
+                    document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
+                } else {
+                    logout();
+                }
+            } catch (err) {
+                console.error("Error loading user info", err);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem("access_token");
+            window.location.href = "/login";
+        }
+
+        loadUserData();
+    </script>
+</body>
+</html>

@@ -58,6 +58,11 @@ class User(BaseModel):
     keywords: Mapped[List["Keyword"]] = relationship("Keyword", back_populates="user", cascade="all, delete-orphan")
     leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="user", cascade="all, delete-orphan")
 
+    @property
+    def is_superuser(self) -> bool:
+        """Admin flag used by API dependencies (`is_admin` column)."""
+        return bool(self.is_admin)
+
 
 class TelegramSession(BaseModel):
     """Telethon StringSession per user."""

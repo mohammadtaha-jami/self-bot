@@ -58,4 +58,16 @@ async def get_current_active_user(
             detail="Inactive user",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return current_user  
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Allow only active admin accounts (`is_superuser` / `is_admin`)."""
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
     return current_user
