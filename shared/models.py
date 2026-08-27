@@ -47,9 +47,18 @@ class User(BaseModel):
     username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
     full_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    business_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    business_type: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="e.g. real_estate, crypto, general, or a custom value",
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    dashboard_password: Mapped[Optional[str]] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="Plain dashboard password for non-admin users (admin panel display only)",
+    )
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

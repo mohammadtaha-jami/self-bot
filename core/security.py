@@ -1,6 +1,8 @@
 """Password hashing and JWT helpers."""
 
 from datetime import datetime, timedelta, timezone
+import secrets
+import string
 from typing import Any, Optional
 
 from jose import jwt
@@ -14,6 +16,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def get_password_hash(password: str) -> str:
     """Return a bcrypt hash of the given plain-text password."""
     return pwd_context.hash(password)
+
+
+def generate_dashboard_password(length: int = 10) -> str:
+    """Generate a random alphanumeric password for dashboard login."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

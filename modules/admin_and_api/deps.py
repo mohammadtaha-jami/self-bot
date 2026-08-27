@@ -1,6 +1,6 @@
 """FastAPI dependencies for database sessions and JWT-authenticated users."""
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -12,6 +12,25 @@ from modules.admin_and_api.schemas import TokenData
 from shared.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+ACCESS_TOKEN_COOKIE = "access_token"
+
+
+def set_access_token_cookie(response: Response, token: str) -> None:
+    """Attach the JWT as an HttpOnly cookie so HTML routes can authorize."""
+    settings = get_settings()
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.app_env == "production",
+        path="/",
+        max_age=settings.access_token_expire_minutes * 60,
+    )
+
+
+def clear_access_token_cookie(response: Response) -> None:
+    response.delete_cookie(ACCESS_TOKEN_COOKIE, path="/")
 
 
 async def get_current_user(
@@ -48,6 +67,32 @@ async def get_current_user(
     return user
 
 
+async def get_user_from_cookie(
+    request: Request,
+    db: AsyncSession,
+) -> User | None:
+    """Load the user from the HttpOnly access_token cookie, if present."""
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE)
+    if not token:
+        return None
+    settings = get_settings()
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.algorithm],
+        )
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        token_user_id = int(user_id)
+    except (JWTError, TypeError, ValueError):
+        return None
+
+    result = await db.execute(select(User).where(User.id == token_user_id))
+    return result.scalar_one_or_none()
+
+
 async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
@@ -61,13 +106,20 @@ async def get_current_active_user(
     return current_user  
 
 
-async def require_admin(
+async def get_current_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Allow only active admin accounts (`is_superuser` / `is_admin`)."""
-    if not current_user.is_superuser:
+    """Allow only active users with ``is_admin == True``."""
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required",
+            detail="دسترسی غیرمجاز",
         )
+    return current_user
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_admin),
+) -> User:
+    """Alias for get_current_admin (backward-compatible)."""
     return current_user

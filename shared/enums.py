@@ -24,3 +24,11 @@ class FeedbackTypeEnum(str, enum.Enum):
     RELEVANT = "relevant"
     IRRELEVANT = "irrelevant"
     NOT_SURE = "not_sure"
+
+
+class BusinessTypeEnum(str, enum.Enum):
+    """Suggested business types stored on User.business_type (custom strings also allowed)."""
+
+    GENERAL = "general"
+    REAL_ESTATE = "real_estate"
+    CRYPTO = "crypto"

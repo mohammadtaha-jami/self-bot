@@ -58,6 +58,7 @@
                 const response = await fetch('/api/v1/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    credentials: 'include',
                     body: formData
                 });
 
@@ -65,7 +66,16 @@
 
                 if (response.ok) {
                     localStorage.setItem('access_token', data.access_token);
-                    window.location.href = '/dashboard';
+
+                    const meRes = await fetch('/api/v1/auth/me', {
+                        headers: { 'Authorization': `Bearer ${data.access_token}` },
+                        credentials: 'include'
+                    });
+                    if (!meRes.ok) {
+                        throw new Error('failed_me');
+                    }
+                    const me = await meRes.json();
+                    window.location.href = me.is_admin ? '/' : '/dashboard';
                 } else {
                     alertBox.innerText = data.detail || 'نام کاربری یا رمز عبور اشتباه است.';
                     alertBox.classList.remove('hidden');

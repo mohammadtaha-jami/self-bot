@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سشن‌های تلگرام</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <style>body { font-family: 'Vazirmatn', sans-serif; }</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+    {% include "includes/admin_nav.html" %}
+
+    <main class="max-w-7xl mx-auto p-6">
+        <section class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <h2 class="text-lg font-bold mb-4 text-emerald-400">سشن‌های فعال تلگرام</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-slate-900 text-slate-400">
+                        <tr>
+                            <th class="p-3">شناسه سشن</th>
+                            <th class="p-3">کاربر فعال</th>
+                            <th class="p-3">نام کامل</th>
+                            <th class="p-3">شماره تلفن</th>
+                            <th class="p-3">وضعیت</th>
+                            <th class="p-3">تاریخ ایجاد</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-table-body" class="divide-y divide-slate-700"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    {% include "includes/admin_common.html" %}
+    <script>
+        async function loadSessions() {
+            const tbody = document.getElementById("sessions-table-body");
+            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
+            try {
+                const res = await fetch("/api/v1/admin/telegram-sessions", { headers: authHeaders() });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    const detail = data && (typeof data.detail === "string" ? data.detail : "خطا در دریافت سشن‌ها");
+                    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-rose-400 text-center">${escapeHtml(detail)}</td></tr>`;
+                    return;
+                }
+                if (!Array.isArray(data) || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-slate-500 text-center">سشن فعالی یافت نشد.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.map((row) => `
+                    <tr class="hover:bg-slate-700/30">
+                        <td class="p-3 font-mono">${row.id}</td>
+                        <td class="p-3">#${row.user_id} ${escapeHtml(row.username || "—")}</td>
+                        <td class="p-3">${escapeHtml(row.full_name || "—")}</td>
+                        <td class="p-3 font-mono dir-ltr">${escapeHtml(row.phone_number)}</td>
+                        <td class="p-3">${statusBadge(row.is_active)}</td>
+                        <td class="p-3 whitespace-nowrap">${escapeHtml(formatDateTime(row.created_at))}</td>
+                    </tr>
+                `).join("");
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
+            }
+        }
+
+        guardAdminPage().then((ok) => {
+            if (ok) loadSessions();
+        });
+    </script>
+</body>
+</html>

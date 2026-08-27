@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>کاربران سیستم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <style>body { font-family: 'Vazirmatn', sans-serif; }</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+    {% include "includes/admin_nav.html" %}
+
+    <main class="max-w-7xl mx-auto p-6">
+        <section class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <h2 class="text-lg font-bold mb-4 text-blue-400">مدیریت کاربران سیستم</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-slate-900 text-slate-400">
+                        <tr>
+                            <th class="p-3">شناسه</th>
+                            <th class="p-3">نام کاربری</th>
+                            <th class="p-3">نام کامل</th>
+                            <th class="p-3">رمز داشبورد</th>
+                            <th class="p-3">وضعیت</th>
+                            <th class="p-3">تاریخ انقضای لایسنس</th>
+                            <th class="p-3">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body" class="divide-y divide-slate-700"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    {% include "includes/admin_common.html" %}
+    <script>
+        async function loadUsers() {
+            const tbody = document.getElementById("users-table-body");
+            tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
+            try {
+                const res = await fetch("/api/v1/admin/users", { headers: authHeaders() });
+                const data = await res.json();
+                if (!res.ok) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-rose-400 text-center">${escapeHtml(data.detail || "خطا در دریافت کاربران")}</td></tr>`;
+                    return;
+                }
+                if (!Array.isArray(data) || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-500 text-center">کاربری یافت نشد.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.map((user) => {
+                    const passwordCell = user.is_admin
+                        ? '<span class="text-slate-500">—</span>'
+                        : `<span class="font-mono dir-ltr">${escapeHtml(user.dashboard_password || "—")}</span>`;
+                    const deleteBtn = user.is_admin
+                        ? ""
+                        : `<button type="button" onclick="deleteUser(${user.id})"
+                            class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white">حذف</button>`;
+                    return `
+                    <tr class="hover:bg-slate-700/30">
+                        <td class="p-3 font-mono">${user.id}</td>
+                        <td class="p-3">${escapeHtml(user.username)}</td>
+                        <td class="p-3">${escapeHtml(user.full_name || "—")}</td>
+                        <td class="p-3">${passwordCell}</td>
+                        <td class="p-3">${statusBadge(user.is_active)}</td>
+                        <td class="p-3 whitespace-nowrap">${escapeHtml(formatLicenseDate(user.license_expires_at))}</td>
+                        <td class="p-3">
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="toggleUserActive(${user.id})"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-semibold ${user.is_active ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"} text-white">
+                                    ${user.is_active ? "غیرفعال‌سازی" : "فعال‌سازی"}
+                                </button>
+                                <button type="button" onclick="renewUserLicense(${user.id})"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white">
+                                    تمدید لایسنس
+                                </button>
+                                ${deleteBtn}
+                            </div>
+                        </td>
+                    </tr>`;
+                }).join("");
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
+            }
+        }
+
+        async function toggleUserActive(userId) {
+            if (!confirm("وضعیت دسترسی این کاربر تغییر کند؟")) return;
+            try {
+                const res = await fetch(`/api/v1/admin/users/${userId}/toggle-active`, {
+                    method: "PATCH",
+                    headers: authHeaders(),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.detail || "تغییر وضعیت انجام نشد.");
+                    return;
+                }
+                await loadUsers();
+            } catch (err) {
+                console.error(err);
+                alert("خطا در ارتباط با سرور");
+            }
+        }
+
+        async function renewUserLicense(userId) {
+            const raw = prompt("تعداد روز تمدید لایسنس را وارد کنید:", "30");
+            if (raw === null) return;
+            const days = parseInt(raw, 10);
+            if (!Number.isInteger(days) || days <= 0) {
+                alert("تعداد روز باید عدد صحیح بزرگ‌تر از صفر باشد.");
+                return;
+            }
+            try {
+                const res = await fetch(`/api/v1/admin/users/${userId}/renew-license`, {
+                    method: "POST",
+                    headers: authHeaders(true),
+                    body: JSON.stringify({ days }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(data.detail || "تمدید لایسنس انجام نشد.");
+                    return;
+                }
+                await loadUsers();
+            } catch (err) {
+                console.error(err);
+                alert("خطا در ارتباط با سرور");
+            }
+        }
+
+        async function deleteUser(userId) {
+            if (!confirm("این کاربر و سشن‌های مرتبط حذف شوند؟")) return;
+            try {
+                const res = await fetch(`/api/v1/admin/users/${userId}`, {
+                    method: "DELETE",
+                    headers: authHeaders(),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.detail || "حذف کاربر انجام نشد.");
+                    return;
+                }
+                await loadUsers();
+            } catch (err) {
+                console.error(err);
+                alert("خطا در ارتباط با سرور");
+            }
+        }
+
+        guardAdminPage().then((ok) => {
+            if (ok) loadUsers();
+        });
+    </script>
+</body>
+</html>

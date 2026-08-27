@@ -1,0 +1,70 @@
+<script>
+    async function guardAdminPage() {
+        const accessToken = localStorage.getItem("access_token");
+        if (!accessToken) {
+            window.location.href = "/login";
+            return null;
+        }
+        try {
+            const res = await fetch("/api/v1/auth/me", {
+                headers: { "Authorization": `Bearer ${accessToken}` }
+            });
+            if (!res.ok) {
+                localStorage.removeItem("access_token");
+                window.location.href = "/login";
+                return null;
+            }
+            const user = await res.json();
+            if (!user.is_admin) {
+                alert("عدم دسترسی");
+                window.location.href = "/dashboard";
+                return null;
+            }
+            return accessToken;
+        } catch (err) {
+            window.location.href = "/login";
+            return null;
+        }
+    }
+
+    function authHeaders(json = false) {
+        const accessToken = localStorage.getItem("access_token");
+        const headers = { "Authorization": `Bearer ${accessToken}` };
+        if (json) headers["Content-Type"] = "application/json";
+        return headers;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function formatDateTime(iso) {
+        if (!iso) return "—";
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) return "—";
+        return date.toLocaleString("fa-IR", { dateStyle: "medium", timeStyle: "short" });
+    }
+
+    function formatLicenseDate(iso) {
+        if (!iso) return "بدون لایسنس";
+        return formatDateTime(iso);
+    }
+
+    function statusBadge(isActive) {
+        if (isActive) {
+            return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400">فعال</span>';
+        }
+        return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-400">غیرفعال</span>';
+    }
+
+    function logout() {
+        localStorage.clear();
+        fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" })
+            .finally(() => { window.location.href = "/login"; });
+    }
+</script>

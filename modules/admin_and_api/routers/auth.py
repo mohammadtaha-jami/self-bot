@@ -2,18 +2,36 @@
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
 from core.security import create_access_token, get_password_hash, verify_password
-from modules.admin_and_api.deps import get_current_active_user, get_db
+from modules.admin_and_api.deps import (
+    clear_access_token_cookie,
+    get_current_active_user,
+    get_db,
+    oauth2_scheme,
+    set_access_token_cookie,
+)
 from modules.admin_and_api.schemas import Token, UserCreate, UserLogin, UserResponse
 from shared.models import User
 
 router = APIRouter()
+
+
+async def get_current_admin(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Reject non-admin users with HTTP 403."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="دسترسی غیرمجاز",
+        )
+    return current_user
 
 
 async def _authenticate_user(
@@ -96,13 +114,34 @@ async def register(
 
 @router.post("/login", response_model=Token)
 async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> Token:
     """Validate OAuth2 form credentials and return a JWT access token."""
     credentials = UserLogin(username=form_data.username, password=form_data.password)
     user = await _authenticate_user(db, credentials.username, credentials.password)
-    return _build_access_token(user)
+    token = _build_access_token(user)
+    set_access_token_cookie(response, token.access_token)
+    return token
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict:
+    """Clear the auth cookie (localStorage is cleared on the client)."""
+    clear_access_token_cookie(response)
+    return {"status": "ok"}
+
+
+@router.post("/sync-cookie")
+async def sync_cookie(
+    response: Response,
+    token: str = Depends(oauth2_scheme),
+    _: User = Depends(get_current_active_user),
+) -> dict:
+    """Set the HttpOnly cookie from a Bearer token (HTML route guards)."""
+    set_access_token_cookie(response, token)
+    return {"status": "ok"}
 
 
 @router.get("/me", response_model=UserResponse)

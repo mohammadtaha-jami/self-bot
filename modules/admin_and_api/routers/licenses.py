@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from modules.admin_and_api.deps import get_current_active_user, get_db, require_admin
+from modules.admin_and_api.deps import get_current_active_user, get_db
+from modules.admin_and_api.routers.auth import get_current_admin
 from modules.admin_and_api.schemas import LicenseRenewRequest, LicenseStatusResponse
 from shared.models import User
 
@@ -47,7 +48,7 @@ async def get_license_status(
 async def renew_license(
     payload: LicenseRenewRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(get_current_admin),
 ) -> LicenseStatusResponse:
     """Extend a user's subscription. Admin-only."""
     result = await db.execute(select(User).where(User.id == payload.user_id))

@@ -34,7 +34,29 @@ class UserResponse(BaseModel):
     username: Optional[str] = None
     full_name: Optional[str] = None
     is_active: bool
+    is_admin: bool = False
     created_at: datetime
+
+
+class AdminUserResponse(BaseModel):
+    """Admin user row including license expiry."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    is_active: bool
+    is_admin: bool = False
+    business_type: Optional[str] = None
+    dashboard_password: Optional[str] = None
+    license_expires_at: Optional[datetime] = None
+
+
+class AdminLicenseRenewRequest(BaseModel):
+    """Days to add to a user's subscription."""
+
+    days: int = Field(..., gt=0)
 
 
 class Token(BaseModel):
@@ -107,9 +129,39 @@ class LicenseRenewRequest(BaseModel):
     extra_days: int = Field(..., gt=0)
 
 
+class AdminSessionResponse(BaseModel):
+    """Active Telegram session row for the admin sessions view."""
+
+    id: int
+    user_id: int
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    phone_number: str
+    is_active: bool
+    created_at: datetime
+
+
 class FeedbackCreate(BaseModel):
     """Payload for submitting lead quality feedback."""
 
     lead_id: int
     feedback_type: FeedbackTypeEnum
     comment: str | None = None
+
+class TelegramSendCodeRequest(BaseModel):
+    phone_number: str  # فرمت: +989123456789
+
+
+class TelegramVerifyRequest(BaseModel):
+    """Payload for verifying Telegram login and attaching a session to a user."""
+
+    phone_number: str
+    phone_code_hash: str
+    code: str
+    two_factor_password: Optional[str] = None
+    target_user_id: Optional[int] = None
+    business_type: Optional[str] = None
+    username: Optional[str] = None
+
+
+TelegramVerifyCodeRequest = TelegramVerifyRequest
