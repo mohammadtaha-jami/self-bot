@@ -33,8 +33,58 @@
         </section>
     </main>
 
+    <div id="edit-user-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+        <div class="w-full max-w-lg bg-slate-800 border border-slate-700 rounded-xl p-6 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-blue-400">ویرایش کاربر</h3>
+                <button type="button" onclick="closeEditUserModal()" class="text-slate-400 hover:text-white text-xl">&times;</button>
+            </div>
+            <form id="edit-user-form" class="space-y-4" onsubmit="return false;">
+                <input type="hidden" id="edit-user-id">
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">نام نمایشی</label>
+                    <input type="text" id="edit-full-name" maxlength="100" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">شماره تلفن / نام کاربری</label>
+                    <input type="text" id="edit-phone" dir="ltr" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">نوع کسب‌وکار</label>
+                    <select id="edit-business-type" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+                        <option value="general">عمومی (general)</option>
+                        <option value="real_estate">املاک (real_estate)</option>
+                        <option value="crypto">کریپتو (crypto)</option>
+                        <option value="programmer">برنامه‌نویس (programmer)</option>
+                        <option value="web_designer">طراح وب (web_designer)</option>
+                        <option value="seo_specialist">سئو (seo_specialist)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">رمز عبور جدید (خالی = بدون تغییر)</label>
+                    <input type="text" id="edit-password" minlength="6" dir="ltr" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">مدت لایسنس جدید (روز، اختیاری)</label>
+                    <input type="number" id="edit-license-days" min="1" placeholder="مثلاً ۳۰" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                <label class="flex items-center gap-2 text-sm text-slate-300">
+                    <input type="checkbox" id="edit-is-active" class="rounded border-slate-600">
+                    کاربر فعال باشد
+                </label>
+                <div id="edit-user-status" class="text-sm font-semibold"></div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="submitEditUser()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-bold">ذخیره</button>
+                    <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg">انصراف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     {% include "includes/admin_common.html" %}
     <script>
+        let usersById = {};
+
         async function loadUsers() {
             const tbody = document.getElementById("users-table-body");
             tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
@@ -46,9 +96,11 @@
                     return;
                 }
                 if (!Array.isArray(data) || data.length === 0) {
+                    usersById = {};
                     tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-500 text-center">کاربری یافت نشد.</td></tr>';
                     return;
                 }
+                usersById = Object.fromEntries(data.map((user) => [String(user.id), user]));
                 tbody.innerHTML = data.map((user) => {
                     const passwordCell = user.is_admin
                         ? '<span class="text-slate-500">—</span>'
@@ -67,6 +119,10 @@
                         <td class="p-3 whitespace-nowrap">${escapeHtml(formatLicenseDate(user.license_expires_at))}</td>
                         <td class="p-3">
                             <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="openEditUserModal(${user.id})"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-600 hover:bg-slate-500 text-white">
+                                    ویرایش
+                                </button>
                                 <button type="button" onclick="toggleUserActive(${user.id})"
                                     class="px-3 py-1.5 rounded-lg text-xs font-semibold ${user.is_active ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"} text-white">
                                     ${user.is_active ? "غیرفعال‌سازی" : "فعال‌سازی"}
@@ -83,6 +139,75 @@
             } catch (err) {
                 console.error(err);
                 tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
+            }
+        }
+
+        function openEditUserModal(userId) {
+            const user = usersById[String(userId)];
+            if (!user) return;
+            document.getElementById("edit-user-id").value = String(user.id);
+            document.getElementById("edit-full-name").value = user.full_name || "";
+            document.getElementById("edit-phone").value = user.username || "";
+            const biz = document.getElementById("edit-business-type");
+            const known = [...biz.options].some((opt) => opt.value === (user.business_type || ""));
+            if (user.business_type && !known) {
+                const extra = document.createElement("option");
+                extra.value = user.business_type;
+                extra.textContent = user.business_type;
+                biz.appendChild(extra);
+            }
+            biz.value = user.business_type || "general";
+            document.getElementById("edit-password").value = "";
+            document.getElementById("edit-license-days").value = "";
+            document.getElementById("edit-is-active").checked = Boolean(user.is_active);
+            document.getElementById("edit-user-status").innerText = "";
+            document.getElementById("edit-user-modal").classList.remove("hidden");
+        }
+
+        function closeEditUserModal() {
+            document.getElementById("edit-user-modal").classList.add("hidden");
+        }
+
+        async function submitEditUser() {
+            const userId = document.getElementById("edit-user-id").value;
+            const statusDiv = document.getElementById("edit-user-status");
+            const password = document.getElementById("edit-password").value;
+            const daysRaw = document.getElementById("edit-license-days").value.trim();
+            const body = {
+                full_name: document.getElementById("edit-full-name").value.trim(),
+                phone_number: document.getElementById("edit-phone").value.trim(),
+                business_type: document.getElementById("edit-business-type").value || null,
+                is_active: document.getElementById("edit-is-active").checked,
+            };
+            if (password) body.password = password;
+            if (daysRaw) {
+                const days = parseInt(daysRaw, 10);
+                if (!Number.isInteger(days) || days <= 0) {
+                    statusDiv.className = "text-sm font-semibold text-rose-400";
+                    statusDiv.innerText = "مدت لایسنس باید عدد بزرگ‌تر از صفر باشد.";
+                    return;
+                }
+                body.license_days = days;
+            }
+            try {
+                const res = await fetch(`/api/v1/admin/users/${userId}`, {
+                    method: "PUT",
+                    headers: authHeaders(true),
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    statusDiv.className = "text-sm font-semibold text-rose-400";
+                    const detail = data && (typeof data.detail === "string" ? data.detail : (data.detail && data.detail[0] && data.detail[0].msg) || "ذخیره نشد.");
+                    statusDiv.innerText = detail;
+                    return;
+                }
+                closeEditUserModal();
+                await loadUsers();
+            } catch (err) {
+                console.error(err);
+                statusDiv.className = "text-sm font-semibold text-rose-400";
+                statusDiv.innerText = "خطا در ارتباط با سرور";
             }
         }
 

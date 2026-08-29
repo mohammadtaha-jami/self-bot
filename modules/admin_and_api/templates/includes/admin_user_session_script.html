@@ -1,0 +1,185 @@
+<script>
+    let phoneCodeHash = "";
+    let currentPhone = "";
+
+    function apiErrorDetail(data) {
+        if (!data) return "خطا";
+        const detail = data.detail;
+        if (typeof detail === "string") return detail;
+        if (Array.isArray(detail) && detail[0] && detail[0].msg) return detail[0].msg;
+        return "عملیات انجام نشد.";
+    }
+
+    function populateTargetUserSelect(users) {
+        const select = document.getElementById("target-user-id");
+        const previous = select.value;
+        select.innerHTML = '<option value="">انتخاب کاربر</option>';
+        users.filter((user) => !user.is_admin).forEach((user) => {
+            const opt = document.createElement("option");
+            opt.value = String(user.id);
+            opt.dataset.phone = user.username || "";
+            const name = user.full_name || user.username || ("user#" + user.id);
+            const phone = user.username ? ` — ${user.username}` : "";
+            opt.textContent = `#${user.id} ${name}${phone}`;
+            select.appendChild(opt);
+        });
+        if (previous && [...select.options].some((o) => o.value === previous)) {
+            select.value = previous;
+        }
+        onTargetUserChange();
+    }
+
+    function onTargetUserChange() {
+        const select = document.getElementById("target-user-id");
+        const option = select.options[select.selectedIndex];
+        const phone = option && option.dataset.phone ? option.dataset.phone : "";
+        if (phone) {
+            document.getElementById("phone-number").value = phone;
+        }
+    }
+
+    async function loadUsersForSelect() {
+        try {
+            const res = await fetch("/api/v1/admin/users", { headers: authHeaders() });
+            const data = await res.json();
+            if (res.ok && Array.isArray(data)) {
+                populateTargetUserSelect(data);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function createUser() {
+        const statusDiv = document.getElementById("create-user-status");
+        const fullName = document.getElementById("create-full-name").value.trim();
+        const phone = document.getElementById("create-phone").value.trim();
+        const password = document.getElementById("create-password").value;
+        const businessType = document.getElementById("create-business-type").value || null;
+        const daysRaw = document.getElementById("create-license-days").value;
+        const expiresRaw = document.getElementById("create-license-expires").value;
+
+        if (!fullName || !phone || !password) {
+            statusDiv.className = "text-sm font-semibold text-rose-400";
+            statusDiv.innerText = "نام نمایشی، شماره تلفن و رمز عبور الزامی است.";
+            return;
+        }
+
+        const body = {
+            full_name: fullName,
+            phone_number: phone,
+            password: password,
+            business_type: businessType,
+        };
+        if (expiresRaw) {
+            body.license_expires_at = new Date(expiresRaw).toISOString();
+        } else {
+            const days = parseInt(daysRaw, 10);
+            if (!Number.isInteger(days) || days <= 0) {
+                statusDiv.className = "text-sm font-semibold text-rose-400";
+                statusDiv.innerText = "مدت لایسنس باید عدد بزرگ‌تر از صفر باشد.";
+                return;
+            }
+            body.license_duration_days = days;
+        }
+
+        try {
+            const res = await fetch("/api/v1/admin/users", {
+                method: "POST",
+                headers: authHeaders(true),
+                body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                statusDiv.className = "text-sm font-semibold text-rose-400";
+                statusDiv.innerText = apiErrorDetail(data);
+                return;
+            }
+            statusDiv.className = "text-sm font-semibold text-emerald-400";
+            statusDiv.innerText = `کاربر #${data.id} با نام کاربری ${data.username} ثبت شد.`;
+            document.getElementById("create-user-form").reset();
+            document.getElementById("create-license-days").value = "30";
+            await loadUsersForSelect();
+        } catch (err) {
+            console.error(err);
+            statusDiv.className = "text-sm font-semibold text-rose-400";
+            statusDiv.innerText = "خطا در ارتباط با سرور";
+        }
+    }
+
+    async function sendCode() {
+        const userId = document.getElementById("target-user-id").value;
+        const statusDiv = document.getElementById("connection-status");
+        if (!userId) {
+            alert("ابتدا کاربر مقصد را انتخاب کنید.");
+            return;
+        }
+        currentPhone = document.getElementById("phone-number").value.trim();
+        if (!currentPhone) {
+            alert("شماره تلفن کاربر انتخابی خالی است.");
+            return;
+        }
+        try {
+            const res = await fetch("/api/v1/telegram/send-code", {
+                method: "POST",
+                headers: authHeaders(true),
+                body: JSON.stringify({ phone_number: currentPhone })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                phoneCodeHash = data.phone_code_hash;
+                document.getElementById("step-send-code").classList.add("hidden");
+                document.getElementById("step-verify-code").classList.remove("hidden");
+                statusDiv.className = "text-sm text-emerald-400";
+                statusDiv.innerText = "کد تایید به تلگرام ارسال شد.";
+            } else {
+                alert(apiErrorDetail(data) || "خطا در ارسال کد");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("خطا در ارتباط با سرور");
+        }
+    }
+
+    async function verifyCode() {
+        const userId = parseInt(document.getElementById("target-user-id").value, 10);
+        const code = document.getElementById("telegram-code").value.trim();
+        const twoFactorPass = document.getElementById("two-factor-pass").value.trim();
+        const statusDiv = document.getElementById("connection-status");
+        if (!userId) {
+            alert("کاربر مقصد انتخاب نشده است.");
+            return;
+        }
+        try {
+            const res = await fetch("/api/v1/telegram/verify-code", {
+                method: "POST",
+                headers: authHeaders(true),
+                body: JSON.stringify({
+                    phone_number: currentPhone,
+                    phone_code_hash: phoneCodeHash,
+                    code: code,
+                    two_factor_password: twoFactorPass || null,
+                    user_id: userId
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                statusDiv.className = "text-sm text-emerald-400";
+                statusDiv.innerText = (data.message || "سشن تلگرام ذخیره شد.") + ` کاربر #${data.user_id}`;
+                document.getElementById("step-verify-code").classList.add("hidden");
+                document.getElementById("step-send-code").classList.remove("hidden");
+                document.getElementById("telegram-code").value = "";
+                document.getElementById("two-factor-pass").value = "";
+                document.getElementById("2fa-container").classList.add("hidden");
+            } else if (data.detail === "2FA_REQUIRED") {
+                document.getElementById("2fa-container").classList.remove("hidden");
+                alert("لطفاً رمز دو مرحله‌ای حساب تلگرام را وارد کنید.");
+            } else {
+                alert(apiErrorDetail(data) || "کد اشتباه است");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("خطا در برقراری اتصال");
+        }
+    }
+</script>

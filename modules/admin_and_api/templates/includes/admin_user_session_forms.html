@@ -1,0 +1,71 @@
+<section class="grid lg:grid-cols-2 gap-6 items-start">
+    <article class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <h2 class="text-lg font-bold mb-1 text-blue-400">ایجاد کاربر جدید</h2>
+        <p class="text-sm text-slate-400 mb-4">ثبت کاربر داشبورد بدون اتصال تلگرام. شماره تلفن به‌عنوان نام کاربری ذخیره می‌شود.</p>
+        <form id="create-user-form" class="space-y-4" onsubmit="return false;">
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">نام نمایشی</label>
+                <input type="text" id="create-full-name" required maxlength="100" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">شماره تلفن (نام کاربری)</label>
+                <input type="text" id="create-phone" required dir="ltr" placeholder="+989123456789" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">رمز عبور ورود به داشبورد</label>
+                <input type="text" id="create-password" required minlength="6" dir="ltr" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">نوع کسب‌وکار</label>
+                <select id="create-business-type" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+                    <option value="general">عمومی (general)</option>
+                    <option value="real_estate">املاک (real_estate)</option>
+                    <option value="crypto">کریپتو (crypto)</option>
+                    <option value="programmer">برنامه‌نویس (programmer)</option>
+                    <option value="web_designer">طراح وب (web_designer)</option>
+                    <option value="seo_specialist">سئو (seo_specialist)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">مدت لایسنس (روز)</label>
+                <input type="number" id="create-license-days" min="1" value="30" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">یا تاریخ انقضای لایسنس (اختیاری)</label>
+                <input type="datetime-local" id="create-license-expires" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
+            </div>
+            <button type="button" onclick="createUser()" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-bold">ثبت کاربر</button>
+            <div id="create-user-status" class="text-sm font-semibold"></div>
+        </form>
+    </article>
+
+    <article class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <h2 class="text-lg font-bold mb-1 text-emerald-400">اتصال سشن تلگرام</h2>
+        <p class="text-sm text-slate-400 mb-4">ابتدا کاربر موجود را انتخاب کنید. شماره از همان کاربر پر می‌شود و سشن در جدول telegram_sessions ذخیره می‌گردد.</p>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">کاربر مقصد</label>
+                <select id="target-user-id" onchange="onTargetUserChange()" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500">
+                    <option value="">انتخاب کاربر</option>
+                </select>
+            </div>
+            <div id="step-send-code" class="space-y-2">
+                <label class="block text-sm text-slate-300 mb-1">شماره تلفن اکانت تلگرام</label>
+                <div class="flex gap-2">
+                    <input type="text" id="phone-number" placeholder="+989123456789" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left dir-ltr focus:outline-none focus:border-emerald-500">
+                    <button type="button" onclick="sendCode()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg whitespace-nowrap">ارسال کد</button>
+                </div>
+            </div>
+            <div id="step-verify-code" class="space-y-4 hidden">
+                <label class="block text-sm text-slate-300">کد ۵ رقمی دریافتی در تلگرام</label>
+                <input type="text" id="telegram-code" placeholder="12345" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-center dir-ltr text-xl tracking-widest focus:outline-none focus:border-emerald-500">
+                <div id="2fa-container" class="hidden space-y-2">
+                    <label class="block text-sm text-slate-300">رمز عبور دو مرحله‌ای (2FA)</label>
+                    <input type="password" id="two-factor-pass" placeholder="Password" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500">
+                </div>
+                <button type="button" onclick="verifyCode()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold">تایید و ذخیره سشن</button>
+            </div>
+            <div id="connection-status" class="text-sm font-semibold"></div>
+        </div>
+    </article>
+</section>

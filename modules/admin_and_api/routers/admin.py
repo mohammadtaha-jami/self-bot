@@ -3,15 +3,18 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import get_password_hash
 from modules.admin_and_api.deps import get_db
 from modules.admin_and_api.routers.auth import get_current_admin
 from modules.admin_and_api.schemas import (
     AdminLicenseRenewRequest,
     AdminSessionResponse,
+    AdminUserCreate,
     AdminUserResponse,
+    AdminUserUpdate,
 )
 from shared.models import TelegramSession, User
 
@@ -50,6 +53,14 @@ async def _get_user_or_404(db: AsyncSession, user_id: int) -> User:
     return user
 
 
+async def _deactivate_telegram_sessions(db: AsyncSession, user_id: int) -> None:
+    await db.execute(
+        update(TelegramSession)
+        .where(TelegramSession.user_id == user_id)
+        .values(is_active=False)
+    )
+
+
 @router.get("/users", response_model=list[AdminUserResponse])
 async def list_admin_users(
     db: AsyncSession = Depends(get_db),
@@ -58,6 +69,43 @@ async def list_admin_users(
     """Return all users with license expiry for the admin panel."""
     result = await db.execute(select(User).order_by(User.id))
     return [_to_admin_user(user) for user in result.scalars().all()]
+
+
+@router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+async def create_admin_user(
+    payload: AdminUserCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> AdminUserResponse:
+    """Create a dashboard user without Telegram authentication."""
+    phone = payload.phone_number.strip()
+    existing = await db.execute(select(User).where(User.username == phone))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="این شماره تلفن قبلاً به‌عنوان نام کاربری ثبت شده است.",
+        )
+
+    now = datetime.now(timezone.utc)
+    if payload.license_expires_at is not None:
+        subscription_end = _aware_utc(payload.license_expires_at)
+    else:
+        subscription_end = now + timedelta(days=int(payload.license_duration_days))
+
+    user = User(
+        username=phone[:100],
+        full_name=payload.full_name.strip()[:100],
+        business_type=payload.business_type,
+        hashed_password=get_password_hash(payload.password),
+        dashboard_password=payload.password,
+        is_active=True,
+        is_admin=False,
+        subscription_end=subscription_end,
+    )
+    db.add(user)
+    await db.flush()
+    await db.refresh(user)
+    return _to_admin_user(user)
 
 
 @router.patch("/users/{user_id}/toggle-active", response_model=AdminUserResponse)
@@ -74,6 +122,57 @@ async def toggle_user_active(
         )
     user = await _get_user_or_404(db, user_id)
     user.is_active = not user.is_active
+    if not user.is_active:
+        await _deactivate_telegram_sessions(db, user.id)
+    await db.flush()
+    await db.refresh(user)
+    return _to_admin_user(user)
+
+
+@router.put("/users/{user_id}", response_model=AdminUserResponse)
+async def update_admin_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+) -> AdminUserResponse:
+    """Update user profile fields; deactivate linked Telegram sessions when inactive."""
+    user = await _get_user_or_404(db, user_id)
+
+    if payload.is_active is False and user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="نمی‌توانید وضعیت دسترسی خودتان را تغییر دهید.",
+        )
+
+    new_username = payload.resolved_username()
+    if new_username is not None:
+        taken = await db.execute(
+            select(User).where(User.username == new_username, User.id != user_id)
+        )
+        if taken.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="این شماره / نام کاربری قبلاً ثبت شده است.",
+            )
+        user.username = new_username[:100]
+
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()[:100]
+    if payload.business_type is not None:
+        user.business_type = payload.business_type
+    if payload.password:
+        user.hashed_password = get_password_hash(payload.password)
+        if not user.is_admin:
+            user.dashboard_password = payload.password
+    if payload.license_days is not None:
+        user.subscription_end = datetime.now(timezone.utc) + timedelta(days=payload.license_days)
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+
+    if not user.is_active:
+        await _deactivate_telegram_sessions(db, user.id)
+
     await db.flush()
     await db.refresh(user)
     return _to_admin_user(user)

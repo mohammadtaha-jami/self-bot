@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from shared.enums import FeedbackTypeEnum, LeadLevelEnum, KeywordTypeEnum
 
@@ -51,6 +51,42 @@ class AdminUserResponse(BaseModel):
     business_type: Optional[str] = None
     dashboard_password: Optional[str] = None
     license_expires_at: Optional[datetime] = None
+
+
+class AdminUserCreate(BaseModel):
+    """Admin-created user; independent of Telegram login."""
+
+    full_name: str = Field(..., min_length=1, max_length=100)
+    phone_number: str = Field(..., min_length=5, max_length=20)
+    password: str = Field(..., min_length=6, max_length=128)
+    business_type: Optional[str] = None
+    license_duration_days: Optional[int] = Field(default=None, gt=0)
+    license_expires_at: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def require_license_window(self):
+        if self.license_duration_days is None and self.license_expires_at is None:
+            raise ValueError("یکی از فیلدهای license_duration_days یا license_expires_at الزامی است.")
+        return self
+
+
+class AdminUserUpdate(BaseModel):
+    """Partial admin update for an existing user."""
+
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    phone_number: Optional[str] = Field(default=None, min_length=5, max_length=20)
+    username: Optional[str] = Field(default=None, min_length=3, max_length=100)
+    business_type: Optional[str] = None
+    password: Optional[str] = Field(default=None, min_length=6, max_length=128)
+    license_days: Optional[int] = Field(default=None, gt=0)
+    is_active: Optional[bool] = None
+
+    def resolved_username(self) -> Optional[str]:
+        raw = self.phone_number if self.phone_number is not None else self.username
+        if raw is None:
+            return None
+        value = raw.strip()
+        return value or None
 
 
 class AdminLicenseRenewRequest(BaseModel):
@@ -153,15 +189,28 @@ class TelegramSendCodeRequest(BaseModel):
 
 
 class TelegramVerifyRequest(BaseModel):
-    """Payload for verifying Telegram login and attaching a session to a user."""
+    """Verify Telegram login and attach the session to an existing user."""
 
     phone_number: str
     phone_code_hash: str
     code: str
     two_factor_password: Optional[str] = None
+    user_id: Optional[int] = None
     target_user_id: Optional[int] = None
-    business_type: Optional[str] = None
-    username: Optional[str] = None
+
+    @model_validator(mode="after")
+    def require_existing_user(self):
+        if self.user_id is None and self.target_user_id is None:
+            raise ValueError("انتخاب کاربر مقصد (user_id) الزامی است.")
+        return self
+
+    @property
+    def owner_user_id(self) -> int:
+        if self.user_id is not None:
+            return self.user_id
+        if self.target_user_id is not None:
+            return self.target_user_id
+        raise ValueError("انتخاب کاربر مقصد (user_id) الزامی است.")
 
 
 TelegramVerifyCodeRequest = TelegramVerifyRequest

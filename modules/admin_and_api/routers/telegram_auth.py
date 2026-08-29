@@ -3,11 +3,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pyrogram.client import Client
 from pyrogram.errors import PhoneCodeExpired, PhoneCodeInvalid, SessionPasswordNeeded
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import get_settings
-from core.security import generate_dashboard_password, get_password_hash
 from modules.admin_and_api.deps import get_db
 from modules.admin_and_api.routers.auth import get_current_admin
 from modules.admin_and_api.schemas import TelegramSendCodeRequest, TelegramVerifyRequest
@@ -57,90 +56,37 @@ async def send_telegram_code(
         )
 
 
-async def _next_fallback_username(db: AsyncSession) -> str:
-    """Build user-06 style names from current user count."""
-    total = (await db.execute(select(func.count()).select_from(User))).scalar_one()
-    n = int(total) + 1
-    while True:
-        candidate = f"user-{n:02d}"
-        taken = await db.execute(select(User).where(User.username == candidate))
-        if taken.scalar_one_or_none() is None:
-            return candidate
-        n += 1
-
-
 def _profile_from_telegram(tg_user) -> dict:
-    username = (getattr(tg_user, "username", None) or "").strip() or None
     first = (getattr(tg_user, "first_name", None) or "").strip()
     last = (getattr(tg_user, "last_name", None) or "").strip()
     full_name = " ".join(part for part in (first, last) if part).strip() or None
     return {
         "telegram_id": getattr(tg_user, "id", None),
-        "username": username,
         "full_name": full_name,
     }
 
 
-async def _unique_username(db: AsyncSession, preferred: str | None) -> str:
-    if preferred:
-        preferred = preferred[:100]
-        taken = await db.execute(select(User).where(User.username == preferred))
-        if taken.scalar_one_or_none() is None:
-            return preferred
-    return await _next_fallback_username(db)
-
-
-async def _assign_dashboard_password(user: User) -> None:
-    if user.is_admin:
-        user.dashboard_password = None
-        return
-    plain = generate_dashboard_password()
-    user.dashboard_password = plain
-    user.hashed_password = get_password_hash(plain)
-
-
-async def _resolve_session_owner(
+async def _attach_session_to_user(
     db: AsyncSession,
-    payload: TelegramVerifyRequest,
+    user_id: int,
     tg_profile: dict,
 ) -> User:
-    """Attach the Telegram session to an existing user or create a new one."""
-    if payload.target_user_id is not None:
-        result = await db.execute(select(User).where(User.id == payload.target_user_id))
-        user = result.scalar_one_or_none()
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="کاربر هدف یافت نشد.",
-            )
-        if payload.business_type:
-            user.business_type = payload.business_type
-        if not user.full_name and tg_profile.get("full_name"):
-            user.full_name = tg_profile["full_name"][:100]
-        if not user.username:
-            user.username = await _unique_username(db, tg_profile.get("username"))
-        if not user.is_admin and not user.dashboard_password:
-            await _assign_dashboard_password(user)
-        await db.flush()
-        return user
-
-    username = await _unique_username(db, tg_profile.get("username"))
-    full_name = tg_profile.get("full_name") or username
-    user = User(
-        username=username,
-        full_name=full_name[:100],
-        business_type=payload.business_type,
-        telegram_id=tg_profile.get("telegram_id"),
-        is_active=True,
-        is_admin=False,
-    )
-    await _assign_dashboard_password(user)
-    db.add(user)
-    try:
-        await db.flush()
-    except Exception:
-        user.telegram_id = None
-        await db.flush()
+    """Attach Telegram session data to an existing users row."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="کاربر هدف یافت نشد.",
+        )
+    telegram_id = tg_profile.get("telegram_id")
+    if telegram_id and not user.telegram_id:
+        taken = await db.execute(select(User).where(User.telegram_id == telegram_id))
+        if taken.scalar_one_or_none() is None:
+            user.telegram_id = telegram_id
+    if not user.full_name and tg_profile.get("full_name"):
+        user.full_name = tg_profile["full_name"][:100]
+    await db.flush()
     return user
 
 
@@ -221,7 +167,7 @@ async def verify_telegram_code(
     await client.disconnect()
     del active_auth_sessions[payload.phone_number]
 
-    owner = await _resolve_session_owner(db, payload, tg_profile)
+    owner = await _attach_session_to_user(db, payload.owner_user_id, tg_profile)
     await _upsert_telegram_session(
         db,
         user_id=owner.id,
