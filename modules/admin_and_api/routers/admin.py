@@ -53,11 +53,13 @@ async def _get_user_or_404(db: AsyncSession, user_id: int) -> User:
     return user
 
 
-async def _deactivate_telegram_sessions(db: AsyncSession, user_id: int) -> None:
+async def _sync_telegram_sessions_active(
+    db: AsyncSession, user_id: int, is_active: bool
+) -> None:
     await db.execute(
         update(TelegramSession)
         .where(TelegramSession.user_id == user_id)
-        .values(is_active=False)
+        .values(is_active=is_active)
     )
 
 
@@ -122,8 +124,7 @@ async def toggle_user_active(
         )
     user = await _get_user_or_404(db, user_id)
     user.is_active = not user.is_active
-    if not user.is_active:
-        await _deactivate_telegram_sessions(db, user.id)
+    await _sync_telegram_sessions_active(db, user.id, user.is_active)
     await db.flush()
     await db.refresh(user)
     return _to_admin_user(user)
@@ -170,8 +171,7 @@ async def update_admin_user(
     if payload.is_active is not None:
         user.is_active = payload.is_active
 
-    if not user.is_active:
-        await _deactivate_telegram_sessions(db, user.id)
+    await _sync_telegram_sessions_active(db, user.id, user.is_active)
 
     await db.flush()
     await db.refresh(user)

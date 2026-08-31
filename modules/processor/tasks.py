@@ -6,7 +6,7 @@ import os
 from core.logger import setup_logging
 from modules.processor.matching import MatchConfig, match_keywords
 from modules.processor.nlp import clean_text
-from modules.processor.presets import get_rules_for_business_types
+from modules.processor.presets import get_rules_for_business_types, get_user_keywords_cache
 from modules.processor.worker import celery_app
 from modules.notification.formatter import format_lead_message
 from modules.notification.sender import send_lead_notification
@@ -27,7 +27,8 @@ def process_raw_message(payload: dict) -> dict:
     message_id = payload.get("message_id")
     raw_text = payload.get("text", "")
     chat_title = payload.get("chat_title", "Unknown")
-    business_type = payload.get("business_type")  # مثلا "programmer" یا "programmer, web_designer"
+    business_type = payload.get("business_type")
+    user_id = payload.get("user_id")
 
     if not raw_text:
         logger.warning("Received empty message payload for ID: %s", message_id)
@@ -40,14 +41,19 @@ def process_raw_message(payload: dict) -> dict:
         business_type,
     )
 
-    # ۱. دریافت کلمات پیش‌فرض دسته‌بندی(ها) از فایل‌های JSON
     preset_rules = get_rules_for_business_types(business_type)
+    cached = get_user_keywords_cache(user_id) if user_id else None
 
-    # ۲. تعیین کلمات کلیدی (اولویت با کلمات اختصاصی پویلود است، در غیر این صورت از پریست استفاده می‌شود)
-    keywords = payload.get("keywords") or preset_rules["keywords"]
-    negative_keywords = (
-        payload.get("negative_keywords") or preset_rules["negative_keywords"]
-    )
+    keywords = payload.get("keywords")
+    negative_keywords = payload.get("negative_keywords")
+    if cached:
+        if isinstance(cached, list):
+            keywords = keywords or cached
+        elif isinstance(cached, dict):
+            keywords = keywords or cached.get("final_keywords") or cached.get("keywords")
+            negative_keywords = negative_keywords or cached.get("negative_keywords")
+    keywords = keywords or preset_rules["keywords"]
+    negative_keywords = negative_keywords or preset_rules["negative_keywords"]
     fuzzy_threshold = payload.get("fuzzy_threshold", 85.0)
 
     # اگر هیچ کلمه‌ای تنظیم نشده باشد، نیازی به پردازش متن نیست

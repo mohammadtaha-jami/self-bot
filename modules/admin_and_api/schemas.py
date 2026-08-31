@@ -35,6 +35,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False
+    business_type: Optional[str] = None
     created_at: datetime
 
 
@@ -122,10 +123,10 @@ class LeadResponse(BaseModel):
 
 
 class KeywordCreate(BaseModel):
-    """Payload for creating a new keyword rule."""
+    """Payload for creating a custom keyword rule."""
 
-    text: str
-    keyword_type: KeywordTypeEnum
+    text: str = Field(..., min_length=1, max_length=100)
+    keyword_type: KeywordTypeEnum = KeywordTypeEnum.POSITIVE
     is_active: bool = True
 
 
@@ -147,6 +148,15 @@ class KeywordResponse(BaseModel):
     type: KeywordTypeEnum
     weight: float
     created_at: datetime
+
+
+class KeywordBundleResponse(BaseModel):
+    """Default, custom, and merged keywords for the dashboard and Redis cache."""
+
+    business_type: Optional[str] = None
+    default_keywords: list[str]
+    custom_keywords: list[KeywordResponse]
+    final_keywords: list[str]
 
 
 class LicenseStatusResponse(BaseModel):

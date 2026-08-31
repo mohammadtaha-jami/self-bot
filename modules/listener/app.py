@@ -3,6 +3,8 @@
 import asyncio
 from sqlalchemy import select
 
+from sqlalchemy.orm import selectinload
+
 from core.database import get_session_factory
 from core.logger import setup_logging
 from modules.listener.auth import load_client, _disconnect_client
@@ -21,12 +23,19 @@ async def main() -> None:
 
     # ۱. دریافت سشن فعال از دیتابیس
     async with session_factory() as db:
-        stmt = select(TelegramSession).where(TelegramSession.is_active == True)
+        stmt = (
+            select(TelegramSession)
+            .options(selectinload(TelegramSession.user))
+            .where(
+                TelegramSession.is_active.is_(True),
+                TelegramSession.is_engine_active.is_(True),
+            )
+        )
         result = await db.execute(stmt)
         session_record = result.scalars().first()
 
     if not session_record:
-        logger.error("❌ No active TelegramSession found in database!")
+        logger.error("❌ No engine-active TelegramSession found in database!")
         return
 
     logger.info(f"🔑 Loading active session for phone: {session_record.phone_number}")
@@ -36,7 +45,13 @@ async def main() -> None:
 
     try:
         # ۳. ثبت هندرها
-        register_handlers(client, session_record.session_string)
+        owner = session_record.user
+        register_handlers(
+            client,
+            session_record.session_string,
+            user_id=session_record.user_id,
+            business_type=owner.business_type if owner else None,
+        )
 
         logger.info("🚀 Listener service is running and listening for group messages...")
         await client.run_until_disconnected()  # type: ignore

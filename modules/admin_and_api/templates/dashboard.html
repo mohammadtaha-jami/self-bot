@@ -45,6 +45,26 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <section class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg">
+                <h3 class="text-lg font-bold mb-2 text-slate-200">کلمات کلیدی سیستم</h3>
+                <p class="text-sm text-slate-400 mb-4">بر اساس نوع کسب‌وکار شما. قابل حذف نیستند.</p>
+                <div id="default-keywords" class="flex flex-wrap gap-2">
+                    <span class="text-slate-500 text-sm">در حال بارگذاری...</span>
+                </div>
+            </section>
+            <section class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg">
+                <h3 class="text-lg font-bold mb-2 text-slate-200">کلمات کلیدی سفارشی</h3>
+                <form id="custom-keyword-form" class="flex gap-2 mb-4" onsubmit="return false;">
+                    <input type="text" id="custom-keyword-text" maxlength="100" placeholder="کلمه یا عبارت جدید"
+                           class="flex-1 px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-indigo-500">
+                    <button type="button" onclick="addCustomKeyword()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg whitespace-nowrap">افزودن</button>
+                </form>
+                <div id="custom-keyword-status" class="text-sm mb-3"></div>
+                <ul id="custom-keywords" class="space-y-2"></ul>
+            </section>
+        </div>
+
         <!-- Leads / Activity Section -->
         <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg">
             <h3 class="text-lg font-bold mb-4 text-slate-200">آخرین لیدهای دریافت شده</h3>
@@ -86,11 +106,115 @@
                     const data = await response.json();
                     document.getElementById("username").innerText = data.full_name || data.username;
                     document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
+                    await loadKeywords();
                 } else {
                     logout();
                 }
             } catch (err) {
                 console.error("Error loading user info", err);
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        async function loadKeywords() {
+            const defaultBox = document.getElementById("default-keywords");
+            const customList = document.getElementById("custom-keywords");
+            try {
+                const res = await fetch("/api/v1/keywords/", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    defaultBox.innerHTML = '<span class="text-rose-400 text-sm">خطا در دریافت کلمات کلیدی</span>';
+                    return;
+                }
+                const defaults = data.default_keywords || [];
+                if (!defaults.length) {
+                    defaultBox.innerHTML = '<span class="text-slate-500 text-sm">کلمه پیش‌فرضی برای این کسب‌وکار تعریف نشده است.</span>';
+                } else {
+                    defaultBox.innerHTML = defaults.map((word) =>
+                        `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-600 text-sm">
+                            ${escapeHtml(word)}
+                            <span class="text-[10px] uppercase tracking-wide text-indigo-300">System</span>
+                        </span>`
+                    ).join("");
+                }
+                const customs = data.custom_keywords || [];
+                if (!customs.length) {
+                    customList.innerHTML = '<li class="text-slate-500 text-sm">هنوز کلمه سفارشی اضافه نکرده‌اید.</li>';
+                } else {
+                    customList.innerHTML = customs.map((item) =>
+                        `<li class="flex items-center justify-between gap-3 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                            <span>${escapeHtml(item.word)}</span>
+                            <button type="button" onclick="deleteCustomKeyword(${item.id})"
+                                class="text-xs bg-rose-600 hover:bg-rose-500 text-white px-3 py-1 rounded-lg">حذف</button>
+                        </li>`
+                    ).join("");
+                }
+            } catch (err) {
+                console.error(err);
+                defaultBox.innerHTML = '<span class="text-rose-400 text-sm">خطا در ارتباط با سرور</span>';
+            }
+        }
+
+        async function addCustomKeyword() {
+            const input = document.getElementById("custom-keyword-text");
+            const status = document.getElementById("custom-keyword-status");
+            const text = input.value.trim();
+            if (!text) {
+                status.className = "text-sm mb-3 text-rose-400";
+                status.innerText = "متن کلمه کلیدی را وارد کنید.";
+                return;
+            }
+            try {
+                const res = await fetch("/api/v1/keywords/", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ text })
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    status.className = "text-sm mb-3 text-rose-400";
+                    status.innerText = (data && data.detail) || "افزودن انجام نشد.";
+                    return;
+                }
+                input.value = "";
+                status.className = "text-sm mb-3 text-emerald-400";
+                status.innerText = "کلمه سفارشی اضافه شد.";
+                await loadKeywords();
+            } catch (err) {
+                console.error(err);
+                status.className = "text-sm mb-3 text-rose-400";
+                status.innerText = "خطا در ارتباط با سرور";
+            }
+        }
+
+        async function deleteCustomKeyword(keywordId) {
+            if (!confirm("این کلمه سفارشی حذف شود؟")) return;
+            try {
+                const res = await fetch(`/api/v1/keywords/${keywordId}`, {
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert(data.detail || "حذف انجام نشد.");
+                    return;
+                }
+                await loadKeywords();
+            } catch (err) {
+                console.error(err);
+                alert("خطا در ارتباط با سرور");
             }
         }
 

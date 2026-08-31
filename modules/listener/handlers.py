@@ -7,7 +7,12 @@ from modules.listener.producer import publish_raw_message
 logger = setup_logging(__name__)
 
 
-async def on_new_message(event: events.NewMessage.Event, session_string: str) -> None:
+async def on_new_message(
+    event: events.NewMessage.Event,
+    session_string: str,
+    user_id: int | None = None,
+    business_type: str | None = None,
+) -> None:
     """Handle a single incoming NewMessage event and forward payload to Celery."""
     if not (event.is_group or event.is_channel):
         return
@@ -15,18 +20,17 @@ async def on_new_message(event: events.NewMessage.Event, session_string: str) ->
     chat = await event.get_chat()
     sender = await event.get_sender()
 
-    user_business_type = "programmer, web_designer" 
-
     message_data = {
+        "user_id": user_id,
         "chat_id": event.chat_id,
         "chat_title": getattr(chat, "title", "Unknown Group"),
         "sender_id": event.sender_id,
         "sender_username": getattr(sender, "username", None),
         "message_id": event.id,
         "text": event.raw_text,
-        "business_type": user_business_type,
+        "business_type": business_type,
         "date": event.date.isoformat() if event.date else None,
-        "session_string": session_string,  # 👈 اضافه شد
+        "session_string": session_string,
     }
 
     logger.info(
@@ -37,10 +41,21 @@ async def on_new_message(event: events.NewMessage.Event, session_string: str) ->
     await publish_raw_message(message_data)
 
 
-def register_handlers(client, session_string: str) -> None:
-    """Register event handlers with attached session info."""
+def register_handlers(
+    client,
+    session_string: str,
+    user_id: int | None = None,
+    business_type: str | None = None,
+) -> None:
+    """Register event handlers with attached session and owner info."""
+
     async def handler(event):
-        await on_new_message(event, session_string)
+        await on_new_message(
+            event,
+            session_string,
+            user_id=user_id,
+            business_type=business_type,
+        )
 
     client.add_event_handler(handler, events.NewMessage(incoming=True))
     logger.info("Event handlers successfully registered.")

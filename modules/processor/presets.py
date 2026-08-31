@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Optional, Union
 import redis
 
 from core.logger import setup_logging
@@ -118,12 +118,19 @@ def get_rules_for_business_types(
 
 # --- توابع اختصاصی کش برای هر کاربر (User-Specific Caching) ---
 
-def get_user_keywords_cache(user_id: Union[int, str]) -> Optional[dict]:
+def user_keywords_cache_key(user_id: Union[int, str]) -> str:
+    return f"user:{user_id}:keywords"
+
+
+def get_user_keywords_cache(user_id: Union[int, str]) -> Optional[Union[dict, list]]:
     """دریافت کلمات کلیدی اختصاصی یک کاربر از کش Redis."""
-    cache_key = f"user:keywords:{user_id}"
+    keys = [user_keywords_cache_key(user_id), f"user:keywords:{user_id}"]
     try:
-        data = redis_client.get(cache_key)
-        return json.loads(data) if data else None
+        for cache_key in keys:
+            data = redis_client.get(cache_key)
+            if data:
+                return json.loads(data)
+        return None
     except Exception as e:
         logger.error("Error reading user cache for user %s: %s", user_id, e)
         return None
@@ -132,18 +139,24 @@ def get_user_keywords_cache(user_id: Union[int, str]) -> Optional[dict]:
 def set_user_keywords_cache(
     user_id: Union[int, str],
     keywords: List[str],
-    negative_keywords: List[str],
-    ttl: int = CACHE_TTL_SECONDS
+    negative_keywords: List[str] | None = None,
+    ttl: int = CACHE_TTL_SECONDS,
+    extra: Optional[dict] = None,
 ) -> bool:
-    """ذخیره یا به‌روزرسانی کلمات کلیدی اختصاصی کاربر در Redis."""
-    cache_key = f"user:keywords:{user_id}"
+    """ذخیره یا به‌روزرسانی کلمات کلیدی ادغام‌شده کاربر در Redis."""
+    cache_key = user_keywords_cache_key(user_id)
     payload = {
         "keywords": keywords,
-        "negative_keywords": negative_keywords,
+        "final_keywords": keywords,
+        "negative_keywords": negative_keywords or [],
     }
+    if extra:
+        payload.update(extra)
     try:
-        redis_client.setex(cache_key, ttl, json.dumps(payload, ensure_ascii=False))
-        logger.info("Updated custom keyword cache for user: %s", user_id)
+        redis_client.set(cache_key, json.dumps(payload, ensure_ascii=False))
+        if ttl:
+            redis_client.expire(cache_key, ttl)
+        logger.info("Updated keyword cache for user: %s", user_id)
         return True
     except Exception as e:
         logger.error("Error setting user cache for user %s: %s", user_id, e)
