@@ -122,6 +122,30 @@ def user_keywords_cache_key(user_id: Union[int, str]) -> str:
     return f"user:{user_id}:keywords"
 
 
+def user_status_cache_key(user_id: Union[int, str]) -> str:
+    return f"user:{user_id}:status"
+
+
+def get_user_engine_status(user_id: Union[int, str]) -> dict:
+    """Read engine_active / license_valid flags from Redis."""
+    cache_key = user_status_cache_key(user_id)
+    default = {"engine_active": False, "license_valid": False}
+    try:
+        data = redis_client.get(cache_key)
+        if not data:
+            return default
+        parsed = json.loads(data)
+        if not isinstance(parsed, dict):
+            return default
+        return {
+            "engine_active": bool(parsed.get("engine_active")),
+            "license_valid": bool(parsed.get("license_valid")),
+        }
+    except Exception as e:
+        logger.error("Error reading engine status for user %s: %s", user_id, e)
+        return default
+
+
 def get_user_keywords_cache(user_id: Union[int, str]) -> Optional[Union[dict, list]]:
     """دریافت کلمات کلیدی اختصاصی یک کاربر از کش Redis."""
     keys = [user_keywords_cache_key(user_id), f"user:keywords:{user_id}"]

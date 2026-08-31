@@ -45,6 +45,42 @@
             </div>
         </div>
 
+        <!-- Engine Status Card -->
+        <section id="engine-card" class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg mb-8">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                <div class="flex items-start gap-4">
+                    <div id="engine-indicator-dot" class="mt-1 w-4 h-4 rounded-full bg-slate-500 shrink-0 ring-4 ring-slate-700/50"></div>
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-200 mb-1">وضعیت موتور شنودگر</h3>
+                        <p id="engine-indicator-label" class="text-sm text-slate-400">در حال دریافت وضعیت...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span id="engine-toggle-label" class="text-sm text-slate-400">خاموش</span>
+                    <button id="engine-toggle-btn" type="button" onclick="toggleEngine()"
+                        class="relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-slate-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-pressed="false" disabled>
+                        <span id="engine-toggle-knob" class="pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 translate-x-0"></span>
+                    </button>
+                </div>
+            </div>
+            <div id="engine-status-message" class="hidden mt-4 text-sm rounded-lg px-4 py-2"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-700">
+                <div>
+                    <p class="text-slate-400 text-xs mb-1">کلمات کلیدی فعال در کش</p>
+                    <p id="engine-keyword-count" class="text-2xl font-bold text-indigo-300">-</p>
+                </div>
+                <div>
+                    <p class="text-slate-400 text-xs mb-1">روزهای باقی‌مانده لایسنس</p>
+                    <p id="engine-days-remaining" class="text-2xl font-bold text-emerald-400">-</p>
+                </div>
+                <div>
+                    <p class="text-slate-400 text-xs mb-1">تاریخ انقضای لایسنس</p>
+                    <p id="engine-license-expiry" class="text-lg font-semibold text-slate-200">-</p>
+                </div>
+            </div>
+        </section>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <section class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg">
                 <h3 class="text-lg font-bold mb-2 text-slate-200">کلمات کلیدی سیستم</h3>
@@ -106,12 +142,152 @@
                     const data = await response.json();
                     document.getElementById("username").innerText = data.full_name || data.username;
                     document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
-                    await loadKeywords();
+                    await Promise.all([loadKeywords(), loadEngineStatus()]);
                 } else {
                     logout();
                 }
             } catch (err) {
                 console.error("Error loading user info", err);
+            }
+        }
+
+        let engineBusy = false;
+        let engineState = { engine_active: false, license_valid: false, indicator: "stopped" };
+
+        function formatPersianDate(isoString) {
+            if (!isoString) return "تعریف نشده";
+            try {
+                return new Date(isoString).toLocaleDateString("fa-IR", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                });
+            } catch {
+                return isoString;
+            }
+        }
+
+        function updateLicenseBadge(data) {
+            const badge = document.getElementById("license-status");
+            if (!data.license_valid) {
+                badge.className = "inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-400";
+                badge.innerText = "منقضی شده";
+            } else {
+                badge.className = "inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400";
+                badge.innerText = `${data.days_remaining} روز باقی‌مانده`;
+            }
+        }
+
+        function updateEngineUI(data) {
+            engineState = data;
+            updateLicenseBadge(data);
+
+            const dot = document.getElementById("engine-indicator-dot");
+            const label = document.getElementById("engine-indicator-label");
+            const toggleBtn = document.getElementById("engine-toggle-btn");
+            const toggleKnob = document.getElementById("engine-toggle-knob");
+            const toggleLabel = document.getElementById("engine-toggle-label");
+
+            document.getElementById("engine-keyword-count").innerText = String(data.keyword_count ?? 0);
+            document.getElementById("engine-days-remaining").innerText = String(data.days_remaining ?? 0);
+            document.getElementById("engine-license-expiry").innerText = formatPersianDate(data.license_expires_at);
+
+            const indicator = data.indicator || (data.license_valid ? (data.engine_active ? "listening" : "stopped") : "expired");
+            const indicatorStyles = {
+                listening: {
+                    dot: "bg-emerald-400 ring-emerald-400/20",
+                    text: "در حال شنود — موتور فعال است",
+                    textClass: "text-emerald-400",
+                },
+                stopped: {
+                    dot: "bg-rose-400 ring-rose-400/20",
+                    text: "متوقف شده — موتور خاموش است",
+                    textClass: "text-rose-400",
+                },
+                expired: {
+                    dot: "bg-amber-400 ring-amber-400/20",
+                    text: "لایسنس منقضی شده — امکان روشن کردن موتور وجود ندارد",
+                    textClass: "text-amber-400",
+                },
+            };
+            const style = indicatorStyles[indicator] || indicatorStyles.stopped;
+            dot.className = `mt-1 w-4 h-4 rounded-full shrink-0 ring-4 ${style.dot}`;
+            label.className = `text-sm ${style.textClass}`;
+            label.innerText = style.text;
+
+            const isActive = Boolean(data.engine_active);
+            toggleBtn.setAttribute("aria-pressed", isActive ? "true" : "false");
+            toggleBtn.className = isActive
+                ? "relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-indigo-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                : "relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-slate-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed";
+            toggleKnob.className = isActive
+                ? "pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 -translate-x-6"
+                : "pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 translate-x-0";
+            toggleLabel.innerText = isActive ? "روشن" : "خاموش";
+            toggleBtn.disabled = engineBusy || (!data.license_valid && !isActive);
+        }
+
+        function showEngineMessage(text, isError) {
+            const box = document.getElementById("engine-status-message");
+            box.className = isError
+                ? "mt-4 text-sm rounded-lg px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30"
+                : "mt-4 text-sm rounded-lg px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+            box.innerText = text;
+            box.classList.remove("hidden");
+        }
+
+        async function loadEngineStatus() {
+            try {
+                const res = await fetch("/api/v1/engine/status", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showEngineMessage((data && data.detail) || "خطا در دریافت وضعیت موتور", true);
+                    return;
+                }
+                updateEngineUI(data);
+            } catch (err) {
+                console.error(err);
+                showEngineMessage("خطا در ارتباط با سرور", true);
+            }
+        }
+
+        async function toggleEngine() {
+            if (engineBusy) return;
+            const shouldStart = !engineState.engine_active;
+            if (shouldStart && !engineState.license_valid) {
+                showEngineMessage("لایسنس منقضی شده است. ابتدا اشتراک خود را تمدید کنید.", true);
+                return;
+            }
+
+            engineBusy = true;
+            document.getElementById("engine-toggle-btn").disabled = true;
+            const endpoint = shouldStart ? "/api/v1/engine/start" : "/api/v1/engine/stop";
+            try {
+                const res = await fetch(endpoint, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    const detail = Array.isArray(data.detail)
+                        ? data.detail.map((item) => item.msg || item).join(" ")
+                        : (data.detail || "عملیات انجام نشد.");
+                    showEngineMessage(detail, true);
+                    return;
+                }
+                updateEngineUI(data);
+                showEngineMessage(
+                    shouldStart ? "موتور شنودگر با موفقیت روشن شد." : "موتور شنودگر خاموش شد.",
+                    false
+                );
+            } catch (err) {
+                console.error(err);
+                showEngineMessage("خطا در ارتباط با سرور", true);
+            } finally {
+                engineBusy = false;
+                document.getElementById("engine-toggle-btn").disabled = !engineState.license_valid && !engineState.engine_active;
             }
         }
 

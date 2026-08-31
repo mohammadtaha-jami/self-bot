@@ -168,6 +168,19 @@ class LicenseStatusResponse(BaseModel):
     subscription_end: Optional[datetime] = None
 
 
+class EngineStatusResponse(BaseModel):
+    """Live engine flag, cached keyword count, and license window."""
+
+    engine_active: bool
+    license_valid: bool
+    keyword_count: int
+    days_remaining: int
+    license_expires_at: Optional[datetime] = None
+    indicator: str = Field(
+        description="listening | stopped | expired",
+    )
+
+
 class LicenseRenewRequest(BaseModel):
     """Admin request to extend a user's subscription."""
 

@@ -6,7 +6,12 @@ import os
 from core.logger import setup_logging
 from modules.processor.matching import MatchConfig, match_keywords
 from modules.processor.nlp import clean_text
-from modules.processor.presets import get_rules_for_business_types, get_user_keywords_cache
+from modules.processor.persist import persist_matched_lead
+from modules.processor.presets import (
+    get_rules_for_business_types,
+    get_user_engine_status,
+    get_user_keywords_cache,
+)
 from modules.processor.worker import celery_app
 from modules.notification.formatter import format_lead_message
 from modules.notification.sender import send_lead_notification
@@ -33,6 +38,20 @@ def process_raw_message(payload: dict) -> dict:
     if not raw_text:
         logger.warning("Received empty message payload for ID: %s", message_id)
         return {"status": "ignored", "reason": "empty_text", "message_id": message_id}
+
+    if user_id:
+        engine_status = get_user_engine_status(user_id)
+        if not engine_status.get("engine_active") or not engine_status.get("license_valid"):
+            logger.info(
+                "Message %s skipped: engine inactive or license invalid for user %s",
+                message_id,
+                user_id,
+            )
+            return {
+                "status": "ignored",
+                "reason": "engine_inactive_or_license_invalid",
+                "message_id": message_id,
+            }
 
     logger.info(
         "Processing message %s from '%s' (Business Types: %s)",
@@ -103,6 +122,13 @@ def process_raw_message(payload: dict) -> dict:
         "matched_keywords": match_result.matched_keywords,
         "score": match_result.score,
     }
+
+    lead_id = None
+    try:
+        lead_id = asyncio.run(persist_matched_lead(payload, match_result))
+    except Exception:
+        logger.exception("Failed to persist lead for message %s", message_id)
+
     message_text = format_lead_message(payload, lead_data)
     session_string = payload.get("session_string")
     celery_app.send_task(
@@ -113,6 +139,7 @@ def process_raw_message(payload: dict) -> dict:
     return {
         "status": "lead_created",
         "message_id": message_id,
+        "lead_id": lead_id,
         "lead_level": match_result.lead_level.value,
         "matched_keywords": match_result.matched_keywords,
         "score": match_result.score,

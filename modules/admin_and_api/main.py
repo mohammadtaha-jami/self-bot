@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.logger import setup_logging
 from modules.admin_and_api.deps import get_db, get_user_from_cookie
-from modules.admin_and_api.routers import admin, auth, keywords, leads, licenses, users
+from modules.admin_and_api.routers import admin, auth, engine, keywords, leads, licenses, users
 from modules.admin_and_api.routers.telegram_auth import router as telegram_router
 logger = setup_logging(__name__)
 
@@ -48,6 +48,11 @@ def create_app() -> FastAPI:
         licenses.router,
         prefix="/api/v1/licenses",
         tags=["Licenses"],
+    )
+    app.include_router(
+        engine.router,
+        prefix="/api/v1",
+        tags=["Engine"],
     )
     app.include_router(
         leads.router,

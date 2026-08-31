@@ -83,6 +83,11 @@ class TelegramSession(BaseModel):
     phone_number: Mapped[str] = mapped_column(String(20), nullable=False)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_engine_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        comment="True when the user has started the listening engine from the dashboard",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationship
