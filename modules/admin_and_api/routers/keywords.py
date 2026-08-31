@@ -1,13 +1,12 @@
 """Keyword CRUD endpoints for the authenticated user."""
 
-import json
 from typing import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.cache import get_redis_client
+from core.cache import sync_user_keywords_payload
 from core.logger import setup_logging
 from modules.admin_and_api.deps import get_current_active_user, get_db
 from modules.admin_and_api.schemas import (
@@ -75,8 +74,8 @@ def _bundle(user: User, custom: list[Keyword]) -> KeywordBundleResponse:
     )
 
 
-async def _sync_user_keywords_redis(user: User, bundle: KeywordBundleResponse) -> None:
-    payload = {
+def build_keywords_redis_payload(user: User, bundle: KeywordBundleResponse) -> dict:
+    return {
         "business_type": bundle.business_type,
         "default_keywords": bundle.default_keywords,
         "custom_keywords": [item.word for item in bundle.custom_keywords],
@@ -86,12 +85,18 @@ async def _sync_user_keywords_redis(user: User, bundle: KeywordBundleResponse) -
             "negative_keywords", []
         ),
     }
-    cache_key = f"user:{user.id}:keywords"
+
+
+async def _sync_user_keywords_redis(user: User, bundle: KeywordBundleResponse) -> int:
+    payload = build_keywords_redis_payload(user, bundle)
     try:
-        redis = get_redis_client()
-        await redis.set(cache_key, json.dumps(payload, ensure_ascii=False))
+        return sync_user_keywords_payload(user.id, payload)
     except Exception:
         logger.exception("Failed to sync keyword cache for user %s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ذخیره کش کلمات کلیدی در Redis ناموفق بود.",
+        ) from None
 
 
 async def _get_owned_keyword(

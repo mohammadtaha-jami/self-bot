@@ -1,11 +1,15 @@
 """Celery worker entry point for the processor service."""
 
 import os
+import threading
+import time
+from datetime import datetime, timezone
 
 import redis.connection as redis_connection
 from celery import Celery
 from dotenv import load_dotenv
 
+from core.cache import get_sync_redis, processor_heartbeat_key
 from core.logger import setup_logging
 
 logger = setup_logging(__name__)
@@ -89,9 +93,20 @@ celery_app.conf.update(
 )
 
 
+def _start_processor_heartbeat() -> None:
+    def loop() -> None:
+        client = get_sync_redis()
+        while True:
+            client.set(processor_heartbeat_key(), datetime.now(timezone.utc).isoformat())
+            time.sleep(15)
+
+    threading.Thread(target=loop, daemon=True, name="processor-heartbeat").start()
+
+
 def main() -> None:
     """Start the background worker consuming messages from Redis."""
     logger.info("Processor worker starting...")
+    _start_processor_heartbeat()
     celery_app.worker_main(["worker", "--loglevel=info", "-P", "solo"])
 
 

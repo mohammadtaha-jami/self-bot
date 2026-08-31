@@ -181,6 +181,29 @@ class EngineStatusResponse(BaseModel):
     )
 
 
+class EnginePipelineStep(BaseModel):
+    """Single pipeline step shown in the dashboard timeline."""
+
+    id: str
+    title: str
+    description: str
+    status: str = Field(description="success | warning | error | running | pending")
+    detail: Optional[str] = None
+    timestamp: datetime
+
+
+class EngineActionResponse(EngineStatusResponse):
+    """Engine status plus ordered pipeline steps from start/stop."""
+
+    pipeline: list[EnginePipelineStep] = Field(default_factory=list)
+
+
+class EnginePipelineLogResponse(BaseModel):
+    """Recent pipeline log entries stored in Redis."""
+
+    items: list[EnginePipelineStep] = Field(default_factory=list)
+
+
 class LicenseRenewRequest(BaseModel):
     """Admin request to extend a user's subscription."""
 

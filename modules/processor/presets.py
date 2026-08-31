@@ -3,24 +3,19 @@
 import json
 from pathlib import Path
 from typing import List, Optional, Union
-import redis
 
+from core.cache import get_sync_redis
 from core.logger import setup_logging
 
 logger = setup_logging(__name__)
 
 PRESETS_DIR = Path("config/presets")
 
-# اتصال به Redis (تنظیمات را متناسب با env پروژه ست کنید)
-redis_client = redis.Redis(
-    host="localhost",
-    port=6379,
-    db=0,
-    decode_responses=True,
-    protocol=2,
-)
-
 CACHE_TTL_SECONDS = 86400  # مدت زمان اعتبارسنجی کش (۲۴ ساعت)
+
+
+def _redis_client():
+    return get_sync_redis()
 
 
 def _normalize_business_types(
@@ -51,7 +46,7 @@ def get_rules_for_single_preset(b_type: str) -> dict:
 
     # ۱. تلاش برای خواندن از Redis
     try:
-        cached_data = redis_client.get(cache_key)
+        cached_data = _redis_client().get(cache_key)
         if cached_data:
             logger.info("Cache HIT for business_type: %s", b_type)
             return json.loads(cached_data)
@@ -74,7 +69,7 @@ def get_rules_for_single_preset(b_type: str) -> dict:
 
         # ۳. ذخیره در Redis برای استفاده‌های بعدی
         try:
-            redis_client.setex(
+            _redis_client().setex(
                 cache_key,
                 CACHE_TTL_SECONDS,
                 json.dumps(rules, ensure_ascii=False)
@@ -132,7 +127,7 @@ def get_user_engine_status(user_id: Union[int, str]) -> dict:
     cache_key = user_status_cache_key(user_id)
     default = {"engine_active": False, "license_valid": False}
     try:
-        data = redis_client.get(cache_key)
+        data = _redis_client().get(cache_key)
         if not data:
             return default
         parsed = json.loads(data)
@@ -152,7 +147,7 @@ def get_user_keywords_cache(user_id: Union[int, str]) -> Optional[Union[dict, li
     keys = [user_keywords_cache_key(user_id), f"user:keywords:{user_id}"]
     try:
         for cache_key in keys:
-            data = redis_client.get(cache_key)
+            data = _redis_client().get(cache_key)
             if data:
                 return json.loads(data)
         return None
@@ -178,9 +173,9 @@ def set_user_keywords_cache(
     if extra:
         payload.update(extra)
     try:
-        redis_client.set(cache_key, json.dumps(payload, ensure_ascii=False))
+        _redis_client().set(cache_key, json.dumps(payload, ensure_ascii=False))
         if ttl:
-            redis_client.expire(cache_key, ttl)
+            _redis_client().expire(cache_key, ttl)
         logger.info("Updated keyword cache for user: %s", user_id)
         return True
     except Exception as e:
@@ -192,7 +187,7 @@ def invalidate_preset_cache(b_type: str) -> None:
     """ابطال کش یک دسته‌بندی (مثلاً پس از ویرایش فایل JSON)."""
     cache_key = f"preset:keywords:{b_type}"
     try:
-        redis_client.delete(cache_key)
+        _redis_client().delete(cache_key)
         logger.info("Invalidated cache for preset: %s", b_type)
     except Exception as e:
         logger.error("Error invalidating cache for %s: %s", b_type, e)

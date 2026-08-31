@@ -30,7 +30,16 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_host: str = "127.0.0.1"
+    redis_port: int = 6379
+    redis_url: str | None = None
+
+    @property
+    def resolved_redis_url(self) -> str:
+        """Redis URL shared by API, Celery, and sync cache clients."""
+        if self.redis_url:
+            return self.redis_url
+        return f"redis://{self.redis_host}:{self.redis_port}/0"
 
     # Telegram
     telegram_api_id: int | None = None

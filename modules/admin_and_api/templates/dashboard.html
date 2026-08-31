@@ -8,6 +8,19 @@
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
     <style>
         body { font-family: 'Vazirmatn', sans-serif; }
+        @keyframes pipeline-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+        }
+        .pipeline-running { animation: pipeline-pulse 1.2s ease-in-out infinite; }
+        .pipeline-line {
+            position: absolute;
+            right: 15px;
+            top: 28px;
+            bottom: -12px;
+            width: 2px;
+            background: linear-gradient(to bottom, rgb(71 85 105), rgb(30 41 59));
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -79,6 +92,23 @@
                     <p id="engine-license-expiry" class="text-lg font-semibold text-slate-200">-</p>
                 </div>
             </div>
+        </section>
+
+        <!-- Pipeline Live Log -->
+        <section id="pipeline-section" class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg mb-8">
+            <div class="flex items-center justify-between gap-4 mb-5">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-200">لاگ زنده Pipeline موتور</h3>
+                    <p class="text-sm text-slate-400 mt-1">مراحل Flag → Redis → Listener → Processor به ترتیب اجرا</p>
+                </div>
+                <span id="pipeline-live-badge" class="hidden text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    ● LIVE
+                </span>
+            </div>
+            <div id="pipeline-empty" class="text-sm text-slate-500 border border-dashed border-slate-700 rounded-lg p-4 text-center">
+                موتور را روشن یا خاموش کنید تا مراحل Pipeline اینجا نمایش داده شود.
+            </div>
+            <ol id="pipeline-steps" class="space-y-0 hidden"></ol>
         </section>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -153,6 +183,95 @@
 
         let engineBusy = false;
         let engineState = { engine_active: false, license_valid: false, indicator: "stopped" };
+        let pipelinePollTimer = null;
+
+        const PIPELINE_STATUS_META = {
+            success: { icon: "✓", dot: "bg-emerald-400 ring-emerald-400/30", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", label: "موفق" },
+            warning: { icon: "!", dot: "bg-amber-400 ring-amber-400/30", badge: "bg-amber-500/15 text-amber-300 border-amber-500/30", label: "هشدار" },
+            error: { icon: "✕", dot: "bg-rose-400 ring-rose-400/30", badge: "bg-rose-500/15 text-rose-300 border-rose-500/30", label: "خطا" },
+            running: { icon: "…", dot: "bg-indigo-400 ring-indigo-400/30 pipeline-running", badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30", label: "در حال اجرا" },
+            pending: { icon: "○", dot: "bg-slate-500 ring-slate-500/30", badge: "bg-slate-700/60 text-slate-300 border-slate-600/40", label: "در انتظار" },
+        };
+
+        function formatPipelineTime(value) {
+            if (!value) return "";
+            try {
+                return new Date(value).toLocaleTimeString("fa-IR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                });
+            } catch {
+                return String(value);
+            }
+        }
+
+        function renderPipelineSteps(steps) {
+            const list = document.getElementById("pipeline-steps");
+            const empty = document.getElementById("pipeline-empty");
+            if (!Array.isArray(steps) || !steps.length) {
+                list.classList.add("hidden");
+                empty.classList.remove("hidden");
+                return;
+            }
+            empty.classList.add("hidden");
+            list.classList.remove("hidden");
+            list.innerHTML = steps.map((step, index) => {
+                const meta = PIPELINE_STATUS_META[step.status] || PIPELINE_STATUS_META.pending;
+                const isLast = index === steps.length - 1;
+                return `
+                    <li class="relative pr-10 pb-6 ${isLast ? '' : ''}">
+                        ${isLast ? '' : '<span class="pipeline-line"></span>'}
+                        <span class="absolute right-2 top-1 w-7 h-7 rounded-full ring-4 flex items-center justify-center text-xs font-bold text-slate-900 ${meta.dot}">
+                            ${meta.icon}
+                        </span>
+                        <div class="bg-slate-900/70 border border-slate-700 rounded-xl p-4 mr-2">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <h4 class="font-semibold text-slate-100">${escapeHtml(step.title)}</h4>
+                                <span class="text-[11px] px-2 py-0.5 rounded-full border ${meta.badge}">${meta.label}</span>
+                            </div>
+                            <p class="text-sm text-slate-400">${escapeHtml(step.description)}</p>
+                            ${step.detail ? `<p class="text-sm mt-2 text-slate-300">${escapeHtml(step.detail)}</p>` : ""}
+                            <p class="text-[11px] text-slate-500 mt-2">${formatPipelineTime(step.timestamp)}</p>
+                        </div>
+                    </li>
+                `;
+            }).join("");
+        }
+
+        function setPipelineLive(isLive) {
+            const badge = document.getElementById("pipeline-live-badge");
+            if (isLive) badge.classList.remove("hidden");
+            else badge.classList.add("hidden");
+        }
+
+        function stopPipelinePolling() {
+            if (pipelinePollTimer) {
+                clearInterval(pipelinePollTimer);
+                pipelinePollTimer = null;
+            }
+            setPipelineLive(false);
+        }
+
+        function startPipelinePolling() {
+            stopPipelinePolling();
+            setPipelineLive(true);
+            pipelinePollTimer = setInterval(loadPipelineLog, 5000);
+        }
+
+        async function loadPipelineLog() {
+            try {
+                const res = await fetch("/api/v1/engine/pipeline", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (!res.ok) return;
+                const items = (data.items || []).slice().reverse();
+                renderPipelineSteps(items);
+            } catch (err) {
+                console.error(err);
+            }
+        }
 
         function formatPersianDate(isoString) {
             if (!isoString) return "تعریف نشده";
@@ -247,6 +366,8 @@
                     return;
                 }
                 updateEngineUI(data);
+                if (data.engine_active) startPipelinePolling();
+                else stopPipelinePolling();
             } catch (err) {
                 console.error(err);
                 showEngineMessage("خطا در ارتباط با سرور", true);
@@ -275,9 +396,19 @@
                         ? data.detail.map((item) => item.msg || item).join(" ")
                         : (data.detail || "عملیات انجام نشد.");
                     showEngineMessage(detail, true);
+                    if (data.pipeline && data.pipeline.length) {
+                        renderPipelineSteps(data.pipeline);
+                    } else {
+                        await loadPipelineLog();
+                    }
                     return;
                 }
                 updateEngineUI(data);
+                if (data.pipeline && data.pipeline.length) {
+                    renderPipelineSteps(data.pipeline);
+                }
+                if (data.engine_active) startPipelinePolling();
+                else stopPipelinePolling();
                 showEngineMessage(
                     shouldStart ? "موتور شنودگر با موفقیت روشن شد." : "موتور شنودگر خاموش شد.",
                     false
@@ -401,6 +532,7 @@
         }
 
         loadUserData();
+        loadPipelineLog();
     </script>
 </body>
 </html>
