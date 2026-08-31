@@ -17,6 +17,7 @@ def get_redis_pool() -> ConnectionPool:
             settings.redis_url,
             decode_responses=True,
             max_connections=20,
+            protocol=2,
         )
     return _pool
 

@@ -16,7 +16,8 @@ redis_client = redis.Redis(
     host="localhost",
     port=6379,
     db=0,
-    decode_responses=True  # دریافت خروجی به صورت string به جای bytes
+    decode_responses=True,
+    protocol=2,
 )
 
 CACHE_TTL_SECONDS = 86400  # مدت زمان اعتبارسنجی کش (۲۴ ساعت)
