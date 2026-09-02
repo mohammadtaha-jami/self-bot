@@ -8,18 +8,28 @@
     <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
     <style>
         body { font-family: 'Vazirmatn', sans-serif; }
-        @keyframes pipeline-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.45; }
+        @keyframes crt-blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
         }
-        .pipeline-running { animation: pipeline-pulse 1.2s ease-in-out infinite; }
-        .pipeline-line {
-            position: absolute;
-            right: 15px;
-            top: 28px;
-            bottom: -12px;
-            width: 2px;
-            background: linear-gradient(to bottom, rgb(71 85 105), rgb(30 41 59));
+        .terminal-window {
+            font-family: "IBM Plex Mono", "Cascadia Mono", "Courier New", monospace;
+            background: #0b120b;
+            background-image:
+                linear-gradient(rgba(18, 32, 18, 0.35) 50%, transparent 50%),
+                radial-gradient(ellipse at center, rgba(0, 255, 70, 0.06), transparent 70%);
+            background-size: 100% 4px, 100% 100%;
+            color: #7CFF9A;
+            text-shadow: 0 0 6px rgba(80, 255, 120, 0.35);
+            box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.65);
+        }
+        .terminal-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1em;
+            background: #7CFF9A;
+            animation: crt-blink 1s step-end infinite;
+            vertical-align: text-bottom;
         }
     </style>
 </head>
@@ -94,21 +104,28 @@
             </div>
         </section>
 
-        <!-- Pipeline Live Log -->
-        <section id="pipeline-section" class="bg-slate-800 rounded-xl border border-slate-700 p-6 shadow-lg mb-8">
-            <div class="flex items-center justify-between gap-4 mb-5">
+        <!-- Pipeline Live Log (collapsed terminal) -->
+        <section id="pipeline-section" class="bg-slate-800 rounded-xl border border-slate-700 p-4 shadow-lg mb-8">
+            <div class="flex items-center justify-between gap-3">
                 <div>
-                    <h3 class="text-lg font-bold text-slate-200">لاگ زنده Pipeline موتور</h3>
-                    <p class="text-sm text-slate-400 mt-1">مراحل Flag → Redis → Listener → Processor به ترتیب اجرا</p>
+                    <h3 class="text-base font-bold text-slate-200">لاگ موتور</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">برای دیدن جزئیات، ترمینال را باز کنید</p>
                 </div>
-                <span id="pipeline-live-badge" class="hidden text-xs px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    ● LIVE
-                </span>
+                <button id="terminal-toggle-btn" type="button" onclick="toggleTerminalPanel()"
+                    class="text-sm px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 border border-slate-600">
+                    نمایش ترمینال
+                </button>
             </div>
-            <div id="pipeline-empty" class="text-sm text-slate-500 border border-dashed border-slate-700 rounded-lg p-4 text-center">
-                موتور را روشن یا خاموش کنید تا مراحل Pipeline اینجا نمایش داده شود.
+            <div id="terminal-panel" class="hidden mt-4">
+                <div class="rounded-lg overflow-hidden border border-emerald-900/60">
+                    <div class="flex items-center justify-between px-3 py-1.5 bg-[#071007] border-b border-emerald-900/50">
+                        <span class="text-[11px] tracking-widest text-emerald-500/80 dir-ltr">engine@self-bot:~</span>
+                        <span id="pipeline-live-badge" class="hidden text-[10px] text-emerald-400">● LIVE</span>
+                    </div>
+                    <pre id="pipeline-terminal" dir="ltr" class="terminal-window m-0 p-4 h-56 overflow-y-auto text-[12px] leading-5 whitespace-pre-wrap break-words">waiting for engine events...
+<span class="terminal-cursor"></span></pre>
+                </div>
             </div>
-            <ol id="pipeline-steps" class="space-y-0 hidden"></ol>
         </section>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -184,22 +201,24 @@
         let engineBusy = false;
         let engineState = { engine_active: false, license_valid: false, indicator: "stopped" };
         let pipelinePollTimer = null;
+        let terminalOpen = false;
 
         const PIPELINE_STATUS_META = {
-            success: { icon: "✓", dot: "bg-emerald-400 ring-emerald-400/30", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", label: "موفق" },
-            warning: { icon: "!", dot: "bg-amber-400 ring-amber-400/30", badge: "bg-amber-500/15 text-amber-300 border-amber-500/30", label: "هشدار" },
-            error: { icon: "✕", dot: "bg-rose-400 ring-rose-400/30", badge: "bg-rose-500/15 text-rose-300 border-rose-500/30", label: "خطا" },
-            running: { icon: "…", dot: "bg-indigo-400 ring-indigo-400/30 pipeline-running", badge: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30", label: "در حال اجرا" },
-            pending: { icon: "○", dot: "bg-slate-500 ring-slate-500/30", badge: "bg-slate-700/60 text-slate-300 border-slate-600/40", label: "در انتظار" },
+            success: { tag: "OK", color: "#7CFF9A" },
+            warning: { tag: "WARN", color: "#FBBF24" },
+            error: { tag: "ERR", color: "#FB7185" },
+            running: { tag: "RUN", color: "#A5B4FC" },
+            pending: { tag: "WAIT", color: "#94A3B8" },
         };
 
         function formatPipelineTime(value) {
-            if (!value) return "";
+            if (!value) return "--:--:--";
             try {
-                return new Date(value).toLocaleTimeString("fa-IR", {
+                return new Date(value).toLocaleTimeString("en-GB", {
                     hour: "2-digit",
                     minute: "2-digit",
                     second: "2-digit",
+                    hour12: false,
                 });
             } catch {
                 return String(value);
@@ -207,42 +226,43 @@
         }
 
         function renderPipelineSteps(steps) {
-            const list = document.getElementById("pipeline-steps");
-            const empty = document.getElementById("pipeline-empty");
+            const terminal = document.getElementById("pipeline-terminal");
+            if (!terminal) return;
             if (!Array.isArray(steps) || !steps.length) {
-                list.classList.add("hidden");
-                empty.classList.remove("hidden");
+                terminal.innerHTML = `waiting for engine events...\n<span class="terminal-cursor"></span>`;
                 return;
             }
-            empty.classList.add("hidden");
-            list.classList.remove("hidden");
-            list.innerHTML = steps.map((step, index) => {
+            const lines = steps.map((step) => {
                 const meta = PIPELINE_STATUS_META[step.status] || PIPELINE_STATUS_META.pending;
-                const isLast = index === steps.length - 1;
-                return `
-                    <li class="relative pr-10 pb-6 ${isLast ? '' : ''}">
-                        ${isLast ? '' : '<span class="pipeline-line"></span>'}
-                        <span class="absolute right-2 top-1 w-7 h-7 rounded-full ring-4 flex items-center justify-center text-xs font-bold text-slate-900 ${meta.dot}">
-                            ${meta.icon}
-                        </span>
-                        <div class="bg-slate-900/70 border border-slate-700 rounded-xl p-4 mr-2">
-                            <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-                                <h4 class="font-semibold text-slate-100">${escapeHtml(step.title)}</h4>
-                                <span class="text-[11px] px-2 py-0.5 rounded-full border ${meta.badge}">${meta.label}</span>
-                            </div>
-                            <p class="text-sm text-slate-400">${escapeHtml(step.description)}</p>
-                            ${step.detail ? `<p class="text-sm mt-2 text-slate-300">${escapeHtml(step.detail)}</p>` : ""}
-                            <p class="text-[11px] text-slate-500 mt-2">${formatPipelineTime(step.timestamp)}</p>
-                        </div>
-                    </li>
-                `;
-            }).join("");
+                const time = formatPipelineTime(step.timestamp);
+                const title = step.title || "";
+                const desc = step.description || "";
+                const detail = step.detail ? ` | ${step.detail}` : "";
+                return `<span style="color:${meta.color}">[${time}] [${meta.tag}] ${escapeHtml(title)} — ${escapeHtml(desc)}${escapeHtml(detail)}</span>`;
+            });
+            terminal.innerHTML = lines.join("\n") + `\n<span class="terminal-cursor"></span>`;
+            terminal.scrollTop = terminal.scrollHeight;
         }
 
         function setPipelineLive(isLive) {
             const badge = document.getElementById("pipeline-live-badge");
+            if (!badge) return;
             if (isLive) badge.classList.remove("hidden");
             else badge.classList.add("hidden");
+        }
+
+        function toggleTerminalPanel() {
+            terminalOpen = !terminalOpen;
+            const panel = document.getElementById("terminal-panel");
+            const btn = document.getElementById("terminal-toggle-btn");
+            panel.classList.toggle("hidden", !terminalOpen);
+            btn.innerText = terminalOpen ? "بستن ترمینال" : "نمایش ترمینال";
+            if (terminalOpen) {
+                loadPipelineLog();
+                if (engineState.engine_active) startPipelinePolling();
+            } else {
+                stopPipelinePolling();
+            }
         }
 
         function stopPipelinePolling() {
@@ -366,8 +386,8 @@
                     return;
                 }
                 updateEngineUI(data);
-                if (data.engine_active) startPipelinePolling();
-                else stopPipelinePolling();
+                if (data.engine_active && terminalOpen) startPipelinePolling();
+                else if (!data.engine_active) stopPipelinePolling();
             } catch (err) {
                 console.error(err);
                 showEngineMessage("خطا در ارتباط با سرور", true);
@@ -396,18 +416,16 @@
                         ? data.detail.map((item) => item.msg || item).join(" ")
                         : (data.detail || "عملیات انجام نشد.");
                     showEngineMessage(detail, true);
-                    if (data.pipeline && data.pipeline.length) {
+                    if (data.pipeline && data.pipeline.length && terminalOpen) {
                         renderPipelineSteps(data.pipeline);
-                    } else {
-                        await loadPipelineLog();
                     }
                     return;
                 }
                 updateEngineUI(data);
-                if (data.pipeline && data.pipeline.length) {
+                if (data.pipeline && data.pipeline.length && terminalOpen) {
                     renderPipelineSteps(data.pipeline);
                 }
-                if (data.engine_active) startPipelinePolling();
+                if (data.engine_active && terminalOpen) startPipelinePolling();
                 else stopPipelinePolling();
                 showEngineMessage(
                     shouldStart ? "موتور شنودگر با موفقیت روشن شد." : "موتور شنودگر خاموش شد.",
@@ -532,7 +550,6 @@
         }
 
         loadUserData();
-        loadPipelineLog();
     </script>
 </body>
 </html>
