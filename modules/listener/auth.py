@@ -99,7 +99,9 @@ async def save_session_to_db(
     async with session_factory() as db:
         # ۱. استخراج مشخصات از TelethonUser
         tg_id = telegram_user.id if telegram_user else None
-        username = telegram_user.username if telegram_user else None
+        telegram_username = telegram_user.username if telegram_user else None
+        if isinstance(telegram_username, str):
+            telegram_username = telegram_username.strip() or None
         full_name = None
         if telegram_user:
             first_name = telegram_user.first_name or ""
@@ -119,19 +121,28 @@ async def save_session_to_db(
             target_user = res_u.scalars().first()
 
         if target_user:
-            # به‌روزرسانی اطلاعات کاربر موجود
+            # به‌روزرسانی اطلاعات کاربر موجود — username لاگین سیستم دست نخورده می‌ماند
             if tg_id is not None:
-                target_user.telegram_id = tg_id
-            if username is not None:
-                target_user.username = username
+                taken = await db.execute(
+                    select(DBUser).where(
+                        DBUser.telegram_id == tg_id,
+                        DBUser.id != target_user.id,
+                    )
+                )
+                if taken.scalars().first() is None:
+                    target_user.telegram_id = tg_id
+            target_user.telegram_username = telegram_username
+            if phone:
+                target_user.phone_number = phone[:20]
             if full_name is not None:
                 target_user.full_name = full_name
             logger.info(f"👤 Updated DB User ID {target_user.id} ({full_name})")
         else:
-            # ساخت کاربر جدید در جدول users
+            # ساخت کاربر جدید در جدول users (بدون نام کاربری لاگین)
             target_user = DBUser(
                 telegram_id=tg_id,
-                username=username,
+                telegram_username=telegram_username,
+                phone_number=phone[:20] if phone else None,
                 full_name=full_name,
                 is_active=True,
             )

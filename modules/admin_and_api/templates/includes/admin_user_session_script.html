@@ -17,9 +17,9 @@
         users.filter((user) => !user.is_admin).forEach((user) => {
             const opt = document.createElement("option");
             opt.value = String(user.id);
-            opt.dataset.phone = user.username || "";
+            opt.dataset.phone = user.phone_number || "";
             const name = user.full_name || user.username || ("user#" + user.id);
-            const phone = user.username ? ` — ${user.username}` : "";
+            const phone = user.phone_number ? ` — ${user.phone_number}` : "";
             opt.textContent = `#${user.id} ${name}${phone}`;
             select.appendChild(opt);
         });
@@ -53,20 +53,22 @@
     async function createUser() {
         const statusDiv = document.getElementById("create-user-status");
         const fullName = document.getElementById("create-full-name").value.trim();
+        const username = document.getElementById("create-username").value.trim();
         const phone = document.getElementById("create-phone").value.trim();
         const password = document.getElementById("create-password").value;
         const businessType = document.getElementById("create-business-type").value || null;
         const daysRaw = document.getElementById("create-license-days").value;
         const expiresRaw = document.getElementById("create-license-expires").value;
 
-        if (!fullName || !phone || !password) {
+        if (!fullName || !username || !phone || !password) {
             statusDiv.className = "text-sm font-semibold text-rose-400";
-            statusDiv.innerText = "نام نمایشی، شماره تلفن و رمز عبور الزامی است.";
+            statusDiv.innerText = "نام نمایشی، نام کاربری، شماره تلفن و رمز عبور الزامی است.";
             return;
         }
 
         const body = {
             full_name: fullName,
+            username: username,
             phone_number: phone,
             password: password,
             business_type: businessType,

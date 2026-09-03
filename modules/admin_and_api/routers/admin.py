@@ -33,6 +33,9 @@ def _to_admin_user(user: User) -> AdminUserResponse:
     return AdminUserResponse(
         id=user.id,
         username=user.username,
+        phone_number=user.phone_number,
+        telegram_username=user.telegram_username,
+        telegram_id=user.telegram_id,
         full_name=user.full_name,
         is_active=user.is_active,
         is_admin=user.is_admin,
@@ -80,12 +83,19 @@ async def create_admin_user(
     _: User = Depends(get_current_admin),
 ) -> AdminUserResponse:
     """Create a dashboard user without Telegram authentication."""
+    login_username = payload.username.strip()
     phone = payload.phone_number.strip()
-    existing = await db.execute(select(User).where(User.username == phone))
-    if existing.scalar_one_or_none() is not None:
+    existing_login = await db.execute(select(User).where(User.username == login_username))
+    if existing_login.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="این شماره تلفن قبلاً به‌عنوان نام کاربری ثبت شده است.",
+            detail="این نام کاربری قبلاً ثبت شده است.",
+        )
+    existing_phone = await db.execute(select(User).where(User.phone_number == phone))
+    if existing_phone.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="این شماره تلفن قبلاً ثبت شده است.",
         )
 
     now = datetime.now(timezone.utc)
@@ -95,7 +105,8 @@ async def create_admin_user(
         subscription_end = now + timedelta(days=int(payload.license_duration_days))
 
     user = User(
-        username=phone[:100],
+        username=login_username[:100],
+        phone_number=phone[:20],
         full_name=payload.full_name.strip()[:100],
         business_type=payload.business_type,
         hashed_password=get_password_hash(payload.password),
@@ -146,17 +157,29 @@ async def update_admin_user(
             detail="نمی‌توانید وضعیت دسترسی خودتان را تغییر دهید.",
         )
 
-    new_username = payload.resolved_username()
-    if new_username is not None:
+    if payload.username is not None:
+        new_username = payload.username.strip()
         taken = await db.execute(
             select(User).where(User.username == new_username, User.id != user_id)
         )
         if taken.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="این شماره / نام کاربری قبلاً ثبت شده است.",
+                detail="این نام کاربری قبلاً ثبت شده است.",
             )
         user.username = new_username[:100]
+
+    if payload.phone_number is not None:
+        new_phone = payload.phone_number.strip()
+        taken_phone = await db.execute(
+            select(User).where(User.phone_number == new_phone, User.id != user_id)
+        )
+        if taken_phone.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="این شماره تلفن قبلاً ثبت شده است.",
+            )
+        user.phone_number = new_phone[:20]
 
     if payload.full_name is not None:
         user.full_name = payload.full_name.strip()[:100]

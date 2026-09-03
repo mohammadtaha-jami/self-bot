@@ -19,7 +19,9 @@
                     <thead class="bg-slate-900 text-slate-400">
                         <tr>
                             <th class="p-3">شناسه</th>
-                            <th class="p-3">نام کاربری</th>
+                            <th class="p-3">نام کاربری لاگین</th>
+                            <th class="p-3">شماره تلفن</th>
+                            <th class="p-3">آیدی تلگرام</th>
                             <th class="p-3">نام کامل</th>
                             <th class="p-3">رمز داشبورد</th>
                             <th class="p-3">وضعیت</th>
@@ -46,7 +48,11 @@
                     <input type="text" id="edit-full-name" maxlength="100" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
-                    <label class="block text-sm text-slate-300 mb-1">شماره تلفن / نام کاربری</label>
+                    <label class="block text-sm text-slate-300 mb-1">نام کاربری لاگین</label>
+                    <input type="text" id="edit-username" maxlength="100" dir="ltr" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm text-slate-300 mb-1">شماره تلفن</label>
                     <input type="text" id="edit-phone" dir="ltr" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
@@ -87,17 +93,17 @@
 
         async function loadUsers() {
             const tbody = document.getElementById("users-table-body");
-            tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
             try {
                 const res = await fetch("/api/v1/admin/users", { headers: authHeaders() });
                 const data = await res.json();
                 if (!res.ok) {
-                    tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-rose-400 text-center">${escapeHtml(data.detail || "خطا در دریافت کاربران")}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-rose-400 text-center">${escapeHtml(data.detail || "خطا در دریافت کاربران")}</td></tr>`;
                     return;
                 }
                 if (!Array.isArray(data) || data.length === 0) {
                     usersById = {};
-                    tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-slate-500 text-center">کاربری یافت نشد.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" class="p-4 text-slate-500 text-center">کاربری یافت نشد.</td></tr>';
                     return;
                 }
                 usersById = Object.fromEntries(data.map((user) => [String(user.id), user]));
@@ -113,6 +119,8 @@
                     <tr class="hover:bg-slate-700/30">
                         <td class="p-3 font-mono">${user.id}</td>
                         <td class="p-3">${escapeHtml(user.username)}</td>
+                        <td class="p-3 font-mono dir-ltr">${escapeHtml(user.phone_number || "—")}</td>
+                        <td class="p-3 font-mono dir-ltr">${escapeHtml(user.telegram_username || "—")}</td>
                         <td class="p-3">${escapeHtml(user.full_name || "—")}</td>
                         <td class="p-3">${passwordCell}</td>
                         <td class="p-3">${statusBadge(user.is_active)}</td>
@@ -138,7 +146,7 @@
                 }).join("");
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
             }
         }
 
@@ -147,7 +155,8 @@
             if (!user) return;
             document.getElementById("edit-user-id").value = String(user.id);
             document.getElementById("edit-full-name").value = user.full_name || "";
-            document.getElementById("edit-phone").value = user.username || "";
+            document.getElementById("edit-username").value = user.username || "";
+            document.getElementById("edit-phone").value = user.phone_number || "";
             const biz = document.getElementById("edit-business-type");
             const known = [...biz.options].some((opt) => opt.value === (user.business_type || ""));
             if (user.business_type && !known) {
@@ -175,6 +184,7 @@
             const daysRaw = document.getElementById("edit-license-days").value.trim();
             const body = {
                 full_name: document.getElementById("edit-full-name").value.trim(),
+                username: document.getElementById("edit-username").value.trim(),
                 phone_number: document.getElementById("edit-phone").value.trim(),
                 business_type: document.getElementById("edit-business-type").value || null,
                 is_active: document.getElementById("edit-is-active").checked,

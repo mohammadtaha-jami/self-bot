@@ -60,8 +60,13 @@ def _profile_from_telegram(tg_user) -> dict:
     first = (getattr(tg_user, "first_name", None) or "").strip()
     last = (getattr(tg_user, "last_name", None) or "").strip()
     full_name = " ".join(part for part in (first, last) if part).strip() or None
+    raw_username = getattr(tg_user, "username", None)
+    telegram_username = (
+        raw_username.strip() if isinstance(raw_username, str) and raw_username.strip() else None
+    )
     return {
         "telegram_id": getattr(tg_user, "id", None),
+        "telegram_username": telegram_username,
         "full_name": full_name,
     }
 
@@ -70,6 +75,7 @@ async def _attach_session_to_user(
     db: AsyncSession,
     user_id: int,
     tg_profile: dict,
+    phone_number: str,
 ) -> User:
     """Attach Telegram session data to an existing users row."""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -80,10 +86,19 @@ async def _attach_session_to_user(
             detail="کاربر هدف یافت نشد.",
         )
     telegram_id = tg_profile.get("telegram_id")
-    if telegram_id and not user.telegram_id:
-        taken = await db.execute(select(User).where(User.telegram_id == telegram_id))
-        if taken.scalar_one_or_none() is None:
-            user.telegram_id = telegram_id
+    if telegram_id:
+        taken = await db.execute(
+            select(User).where(User.telegram_id == telegram_id, User.id != user.id)
+        )
+        if taken.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="این اکانت تلگرام به کاربر دیگری متصل است.",
+            )
+        user.telegram_id = telegram_id
+    user.telegram_username = tg_profile.get("telegram_username")
+    if phone_number:
+        user.phone_number = phone_number[:20]
     if not user.full_name and tg_profile.get("full_name"):
         user.full_name = tg_profile["full_name"][:100]
     await db.flush()
@@ -167,7 +182,12 @@ async def verify_telegram_code(
     await client.disconnect()
     del active_auth_sessions[payload.phone_number]
 
-    owner = await _attach_session_to_user(db, payload.owner_user_id, tg_profile)
+    owner = await _attach_session_to_user(
+        db,
+        payload.owner_user_id,
+        tg_profile,
+        payload.phone_number,
+    )
     await _upsert_telegram_session(
         db,
         user_id=owner.id,
@@ -181,6 +201,9 @@ async def verify_telegram_code(
         "message": "اتصال تلگرام ذخیره شد.",
         "user_id": owner.id,
         "username": owner.username,
+        "phone_number": owner.phone_number,
+        "telegram_username": owner.telegram_username,
+        "telegram_id": owner.telegram_id,
         "full_name": owner.full_name,
         "business_type": owner.business_type,
         "dashboard_password": None if owner.is_admin else owner.dashboard_password,

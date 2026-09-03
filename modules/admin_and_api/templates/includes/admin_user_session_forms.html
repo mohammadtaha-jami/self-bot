@@ -1,14 +1,18 @@
 <section class="grid lg:grid-cols-2 gap-6 items-start">
     <article class="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <h2 class="text-lg font-bold mb-1 text-blue-400">ایجاد کاربر جدید</h2>
-        <p class="text-sm text-slate-400 mb-4">ثبت کاربر داشبورد بدون اتصال تلگرام. شماره تلفن به‌عنوان نام کاربری ذخیره می‌شود.</p>
+        <p class="text-sm text-slate-400 mb-4">ثبت کاربر داشبورد بدون اتصال تلگرام. نام کاربری لاگین از شماره تلفن جداست.</p>
         <form id="create-user-form" class="space-y-4" onsubmit="return false;">
             <div>
                 <label class="block text-sm text-slate-300 mb-1">نام نمایشی</label>
                 <input type="text" id="create-full-name" required maxlength="100" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500">
             </div>
             <div>
-                <label class="block text-sm text-slate-300 mb-1">شماره تلفن (نام کاربری)</label>
+                <label class="block text-sm text-slate-300 mb-1">نام کاربری لاگین</label>
+                <input type="text" id="create-username" required minlength="3" maxlength="100" dir="ltr" placeholder="login_name" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm text-slate-300 mb-1">شماره تلفن</label>
                 <input type="text" id="create-phone" required dir="ltr" placeholder="+989123456789" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-left focus:outline-none focus:border-blue-500">
             </div>
             <div>
@@ -41,7 +45,7 @@
 
     <article class="bg-slate-800 border border-slate-700 rounded-xl p-6">
         <h2 class="text-lg font-bold mb-1 text-emerald-400">اتصال سشن تلگرام</h2>
-        <p class="text-sm text-slate-400 mb-4">ابتدا کاربر موجود را انتخاب کنید. شماره از همان کاربر پر می‌شود و سشن در جدول telegram_sessions ذخیره می‌گردد.</p>
+        <p class="text-sm text-slate-400 mb-4">ابتدا کاربر موجود را انتخاب کنید. شماره تلفن همان کاربر پر می‌شود و پس از تایید، آیدی عددی و @username تلگرام روی همان کاربر ذخیره می‌گردد.</p>
         <div class="space-y-4">
             <div>
                 <label class="block text-sm text-slate-300 mb-1">کاربر مقصد</label>

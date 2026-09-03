@@ -44,7 +44,21 @@ class User(BaseModel):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
-    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    telegram_username: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Telegram @username from get_me(), independent of login username",
+    )
+    username: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Dashboard login username (not phone, not Telegram @id)",
+    )
+    phone_number: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Contact / Telegram session phone",
+    )
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
     full_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     business_type: Mapped[Optional[str]] = mapped_column(

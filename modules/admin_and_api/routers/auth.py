@@ -97,8 +97,18 @@ async def register(
                 detail="Telegram ID already registered",
             )
 
+    phone = payload.phone_number.strip() if payload.phone_number else None
+    if phone:
+        existing_phone = await db.execute(select(User).where(User.phone_number == phone))
+        if existing_phone.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone number already registered",
+            )
+
     user = User(
         username=payload.username,
+        phone_number=phone,
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
         business_type=payload.business_type,

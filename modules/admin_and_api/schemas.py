@@ -13,6 +13,7 @@ class UserCreate(BaseModel):
 
     username: str = Field(..., min_length=3, max_length=100)
     password: str = Field(..., min_length=8)
+    phone_number: Optional[str] = Field(default=None, min_length=5, max_length=20)
     full_name: Optional[str] = None
     business_type: Optional[str] = None
     telegram_id: Optional[int] = None
@@ -32,6 +33,9 @@ class UserResponse(BaseModel):
 
     id: int
     username: Optional[str] = None
+    phone_number: Optional[str] = None
+    telegram_username: Optional[str] = None
+    telegram_id: Optional[int] = None
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False
@@ -46,6 +50,9 @@ class AdminUserResponse(BaseModel):
 
     id: int
     username: Optional[str] = None
+    phone_number: Optional[str] = None
+    telegram_username: Optional[str] = None
+    telegram_id: Optional[int] = None
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False
@@ -58,6 +65,7 @@ class AdminUserCreate(BaseModel):
     """Admin-created user; independent of Telegram login."""
 
     full_name: str = Field(..., min_length=1, max_length=100)
+    username: str = Field(..., min_length=3, max_length=100)
     phone_number: str = Field(..., min_length=5, max_length=20)
     password: str = Field(..., min_length=6, max_length=128)
     business_type: Optional[str] = None
@@ -81,13 +89,6 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = Field(default=None, min_length=6, max_length=128)
     license_days: Optional[int] = Field(default=None, gt=0)
     is_active: Optional[bool] = None
-
-    def resolved_username(self) -> Optional[str]:
-        raw = self.phone_number if self.phone_number is not None else self.username
-        if raw is None:
-            return None
-        value = raw.strip()
-        return value or None
 
 
 class AdminLicenseRenewRequest(BaseModel):
