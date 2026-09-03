@@ -2,12 +2,15 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.security import get_password_hash
-from modules.admin_and_api.deps import get_db
+from core.config import get_settings
+from core.security import create_access_token, get_password_hash
+from core.cache import listener_heartbeat_key, service_heartbeat_age_seconds
+from modules.admin_and_api.deps import get_db, set_access_token_cookie
+from modules.admin_and_api.engine_pipeline import HEARTBEAT_MAX_AGE_SECONDS
 from modules.admin_and_api.routers.auth import get_current_admin
 from modules.admin_and_api.schemas import (
     AdminLicenseRenewRequest,
@@ -15,6 +18,7 @@ from modules.admin_and_api.schemas import (
     AdminUserCreate,
     AdminUserResponse,
     AdminUserUpdate,
+    Token,
 )
 from shared.models import TelegramSession, User
 
@@ -141,6 +145,44 @@ async def toggle_user_active(
     return _to_admin_user(user)
 
 
+@router.post("/users/{user_id}/impersonate", response_model=Token)
+async def impersonate_user(
+    user_id: int,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+) -> Token:
+    """Issue a JWT as the target tenant so the admin can open their dashboard."""
+    if user_id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="نمی‌توانید با حساب خودتان وارد پنل کاربری شوید.",
+        )
+    user = await _get_user_or_404(db, user_id)
+    if user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ورود به پنل کاربر ادمین مجاز نیست.",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="این کاربر غیرفعال است.",
+        )
+
+    settings = get_settings()
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "username": user.username,
+            "impersonated_by": admin.id,
+        },
+        expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
+    )
+    set_access_token_cookie(response, access_token)
+    return Token(access_token=access_token, token_type="bearer")
+
+
 @router.put("/users/{user_id}", response_model=AdminUserResponse)
 async def update_admin_user(
     user_id: int,
@@ -247,15 +289,23 @@ async def list_active_telegram_sessions(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> list[AdminSessionResponse]:
-    """Return active rows from telegram_sessions with the owning user."""
+    """Return connected telegram_sessions with engine and live-listener status."""
     result = await db.execute(
         select(TelegramSession, User)
         .join(User, User.id == TelegramSession.user_id)
         .where(TelegramSession.is_active.is_(True))
         .order_by(TelegramSession.id)
     )
+    pairs = result.all()
+    heartbeat_age = service_heartbeat_age_seconds(listener_heartbeat_key())
+    listener_alive = heartbeat_age is not None and heartbeat_age <= HEARTBEAT_MAX_AGE_SECONDS
+    listening_session_id = next(
+        (session.id for session, _owner in pairs if session.is_engine_active),
+        None,
+    )
+
     rows: list[AdminSessionResponse] = []
-    for session, owner in result.all():
+    for session, owner in pairs:
         rows.append(
             AdminSessionResponse(
                 id=session.id,
@@ -264,6 +314,12 @@ async def list_active_telegram_sessions(
                 full_name=owner.full_name if owner else None,
                 phone_number=session.phone_number,
                 is_active=session.is_active,
+                is_engine_active=bool(session.is_engine_active),
+                is_listening=bool(
+                    listener_alive
+                    and session.is_engine_active
+                    and session.id == listening_session_id
+                ),
                 created_at=session.created_at,
             )
         )

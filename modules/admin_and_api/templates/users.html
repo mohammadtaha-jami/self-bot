@@ -135,6 +135,10 @@
                                     class="px-3 py-1.5 rounded-lg text-xs font-semibold ${user.is_active ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"} text-white">
                                     ${user.is_active ? "غیرفعال‌سازی" : "فعال‌سازی"}
                                 </button>
+                                ${user.is_admin ? "" : `<button type="button" onclick="enterUserDashboard(${user.id})"
+                                    class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">
+                                    ورود به پنل
+                                </button>`}
                                 <button type="button" onclick="renewUserLicense(${user.id})"
                                     class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white">
                                     تمدید لایسنس
@@ -218,6 +222,30 @@
                 console.error(err);
                 statusDiv.className = "text-sm font-semibold text-rose-400";
                 statusDiv.innerText = "خطا در ارتباط با سرور";
+            }
+        }
+
+        async function enterUserDashboard(userId) {
+            const adminToken = localStorage.getItem("access_token");
+            try {
+                const res = await fetch(`/api/v1/admin/users/${userId}/impersonate`, {
+                    method: "POST",
+                    headers: authHeaders(),
+                    credentials: "include",
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    alert((data && data.detail) || "ورود به پنل کاربر انجام نشد.");
+                    return;
+                }
+                if (adminToken) {
+                    sessionStorage.setItem("admin_return_token", adminToken);
+                }
+                localStorage.setItem("access_token", data.access_token);
+                window.location.href = "/dashboard";
+            } catch (err) {
+                console.error(err);
+                alert("خطا در ارتباط با سرور");
             }
         }
 

@@ -45,6 +45,16 @@
         </button>
     </nav>
 
+    <div id="impersonation-banner" class="hidden bg-amber-500/15 border-b border-amber-500/40 px-6 py-3">
+        <div class="container mx-auto flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-amber-200">شما با دسترسی ادمین وارد پنل این کاربر شده‌اید.</p>
+            <button type="button" onclick="returnToAdmin()"
+                class="bg-amber-500 hover:bg-amber-400 text-slate-900 px-4 py-1.5 rounded-lg text-sm font-semibold">
+                بازگشت به پنل ادمین
+            </button>
+        </div>
+    </div>
+
     <!-- Main Layout -->
     <div class="container mx-auto px-6 py-8">
         
@@ -187,6 +197,8 @@
                 
                 if (response.ok) {
                     const data = await response.json();
+                    const impersonating = Boolean(sessionStorage.getItem("admin_return_token"));
+                    document.getElementById("impersonation-banner").classList.toggle("hidden", !impersonating);
                     document.getElementById("username").innerText = data.full_name || data.username;
                     document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
                     await Promise.all([loadKeywords(), loadEngineStatus()]);
@@ -543,7 +555,28 @@
             }
         }
 
+        async function returnToAdmin() {
+            const adminToken = sessionStorage.getItem("admin_return_token");
+            if (!adminToken) {
+                window.location.href = "/users";
+                return;
+            }
+            localStorage.setItem("access_token", adminToken);
+            sessionStorage.removeItem("admin_return_token");
+            try {
+                await fetch("/api/v1/auth/sync-cookie", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${adminToken}` },
+                    credentials: "include",
+                });
+            } catch (err) {
+                console.error(err);
+            }
+            window.location.href = "/users";
+        }
+
         function logout() {
+            sessionStorage.removeItem("admin_return_token");
             localStorage.removeItem("access_token");
             fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" })
                 .finally(() => { window.location.href = "/login"; });

@@ -16,6 +16,7 @@ from modules.listener.auth import _disconnect_client, load_client
 from modules.listener.handlers import register_handlers
 from modules.listener.producer import close_producer
 from shared.models import TelegramSession
+from shared.telegram_session import to_telethon_string_session
 
 logger = setup_logging(__name__)
 
@@ -96,9 +97,26 @@ async def _watch_session_state(session_id: int, stop_event: asyncio.Event) -> No
             break
 
 
+async def _persist_telethon_session_string(session_id: int, session_string: str) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        stmt = select(TelegramSession).where(TelegramSession.id == session_id)
+        result = await db.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None or row.session_string == session_string:
+            return
+        row.session_string = session_string
+        await db.commit()
+        logger.info("Normalized stored session string to Telethon format for session %s", session_id)
+
+
 async def _run_listener_session(session_record: TelegramSession) -> None:
     logger.info("Loading active session for phone: %s", session_record.phone_number)
-    client = await load_client(session_record.session_string)
+    telethon_session = to_telethon_string_session(session_record.session_string)
+    if telethon_session != session_record.session_string:
+        await _persist_telethon_session_string(session_record.id, telethon_session)
+        session_record.session_string = telethon_session
+    client = await load_client(telethon_session)
     stop_event = asyncio.Event()
 
     owner = session_record.user
@@ -135,7 +153,14 @@ async def main() -> None:
                 logger.info("No engine-active TelegramSession yet. Waiting for dashboard start...")
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
                 continue
-            await _run_listener_session(session_record)
+            try:
+                await _run_listener_session(session_record)
+            except Exception:
+                logger.exception(
+                    "Listener failed for phone %s; will retry after wait",
+                    session_record.phone_number,
+                )
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
             logger.info("Listener cycle finished. Checking for next engine-active session...")
             await asyncio.sleep(2)
     finally:

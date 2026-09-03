@@ -1,20 +1,26 @@
-"""Telegram client authentication endpoints for session string generation."""
+"""Telegram client authentication endpoints for Telethon session string generation."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pyrogram.client import Client
-from pyrogram.errors import PhoneCodeExpired, PhoneCodeInvalid, SessionPasswordNeeded
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from telethon import TelegramClient
+from telethon.errors import (
+    PhoneCodeExpiredError,
+    PhoneCodeInvalidError,
+    SessionPasswordNeededError,
+)
+from telethon.sessions import StringSession
 
 from core.config import get_settings
 from modules.admin_and_api.deps import get_db
 from modules.admin_and_api.routers.auth import get_current_admin
 from modules.admin_and_api.schemas import TelegramSendCodeRequest, TelegramVerifyRequest
+from modules.listener.auth import _build_client, _disconnect_client
 from shared.models import TelegramSession, User
 
 router = APIRouter(prefix="/telegram", tags=["Telegram Connection"])
 
-active_auth_sessions: dict[str, Client] = {}
+active_auth_sessions: dict[str, TelegramClient] = {}
 
 
 @router.post("/send-code")
@@ -31,16 +37,14 @@ async def send_telegram_code(
             detail="تنظیمات TELEGRAM_API_ID یا TELEGRAM_API_HASH در فایل .env تعریف نشده است.",
         )
 
-    client = Client(
-        name=f"session_{payload.phone_number.replace('+', '')}",
-        api_id=int(settings.telegram_api_id),
-        api_hash=str(settings.telegram_api_hash),
-        in_memory=True,
-    )
+    previous = active_auth_sessions.pop(payload.phone_number, None)
+    if previous is not None:
+        await _disconnect_client(previous)
 
+    client = _build_client()
     await client.connect()
     try:
-        sent_code = await client.send_code(payload.phone_number)
+        sent_code = await client.send_code_request(payload.phone_number)
         active_auth_sessions[payload.phone_number] = client
 
         return {
@@ -49,7 +53,7 @@ async def send_telegram_code(
             "phone_code_hash": sent_code.phone_code_hash,
         }
     except Exception as e:
-        await client.disconnect()
+        await _disconnect_client(client)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"خطا در ارسال کد: {str(e)}",
@@ -160,26 +164,33 @@ async def verify_telegram_code(
 
     try:
         await client.sign_in(
-            phone_number=payload.phone_number,
+            payload.phone_number,
+            payload.code,
             phone_code_hash=payload.phone_code_hash,
-            phone_code=payload.code,
         )
-    except SessionPasswordNeeded:
+    except SessionPasswordNeededError:
         if not payload.two_factor_password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="2FA_REQUIRED",
             )
-        await client.check_password(payload.two_factor_password)
-    except (PhoneCodeInvalid, PhoneCodeExpired):
+        await client.sign_in(password=payload.two_factor_password)
+    except (PhoneCodeInvalidError, PhoneCodeExpiredError):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="کد وارد شده اشتباه یا منقضی شده است.",
         )
 
-    string_session = await client.export_session_string()
+    if not isinstance(client.session, StringSession):
+        await _disconnect_client(client)
+        active_auth_sessions.pop(payload.phone_number, None)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ذخیره سشن تلگرام ناموفق بود.",
+        )
+    string_session = client.session.save()
     tg_profile = _profile_from_telegram(await client.get_me())
-    await client.disconnect()
+    await _disconnect_client(client)
     del active_auth_sessions[payload.phone_number]
 
     owner = await _attach_session_to_user(

@@ -13,7 +13,13 @@
 
     <main class="max-w-7xl mx-auto p-6">
         <section class="bg-slate-800 border border-slate-700 rounded-xl p-6">
-            <h2 class="text-lg font-bold mb-4 text-emerald-400">سشن‌های فعال تلگرام</h2>
+            <h2 class="text-lg font-bold mb-2 text-emerald-400">سشن‌های فعال تلگرام</h2>
+            <p class="text-sm text-slate-400 mb-4">وضعیت اتصال سشن، روشن/خاموش بودن موتور و شنود زنده‌ای که الان در حال اجراست.</p>
+            <div class="flex flex-wrap gap-3 text-xs text-slate-400 mb-4">
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>موتور روشن</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-500"></span>موتور خاموش</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-sky-400 animate-pulse"></span>در حال کار (شنود زنده)</span>
+            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-right text-sm">
                     <thead class="bg-slate-900 text-slate-400">
@@ -22,7 +28,9 @@
                             <th class="p-3">کاربر فعال</th>
                             <th class="p-3">نام کامل</th>
                             <th class="p-3">شماره تلفن</th>
-                            <th class="p-3">وضعیت</th>
+                            <th class="p-3">اتصال سشن</th>
+                            <th class="p-3">موتور</th>
+                            <th class="p-3">وضعیت اجرا</th>
                             <th class="p-3">تاریخ ایجاد</th>
                         </tr>
                     </thead>
@@ -34,39 +42,64 @@
 
     {% include "includes/admin_common.html" %}
     <script>
+        function engineBadge(isOn) {
+            if (isOn) {
+                return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400">روشن</span>';
+            }
+            return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/15 text-slate-400">خاموش</span>';
+        }
+
+        function runtimeBadge(row) {
+            if (row.is_listening) {
+                return '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-500/15 text-sky-300"><span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>در حال کار</span>';
+            }
+            if (row.is_engine_active) {
+                return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300">روشن — منتظر شنود</span>';
+            }
+            return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/15 text-slate-400">متوقف</span>';
+        }
+
         async function loadSessions() {
             const tbody = document.getElementById("sessions-table-body");
-            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
+            const emptyState = '<tr><td colspan="8" class="p-4 text-slate-400 text-center">در حال بارگذاری...</td></tr>';
+            if (!tbody.dataset.loaded) {
+                tbody.innerHTML = emptyState;
+            }
             try {
                 const res = await fetch("/api/v1/admin/telegram-sessions", { headers: authHeaders() });
                 const data = await res.json().catch(() => null);
                 if (!res.ok) {
                     const detail = data && (typeof data.detail === "string" ? data.detail : "خطا در دریافت سشن‌ها");
-                    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-rose-400 text-center">${escapeHtml(detail)}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-rose-400 text-center">${escapeHtml(detail)}</td></tr>`;
                     return;
                 }
                 if (!Array.isArray(data) || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-slate-500 text-center">سشن فعالی یافت نشد.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-slate-500 text-center">سشن فعالی یافت نشد.</td></tr>';
                     return;
                 }
+                tbody.dataset.loaded = "1";
                 tbody.innerHTML = data.map((row) => `
-                    <tr class="hover:bg-slate-700/30">
+                    <tr class="hover:bg-slate-700/30 ${row.is_listening ? "bg-sky-500/5" : ""}">
                         <td class="p-3 font-mono">${row.id}</td>
                         <td class="p-3">#${row.user_id} ${escapeHtml(row.username || "—")}</td>
                         <td class="p-3">${escapeHtml(row.full_name || "—")}</td>
                         <td class="p-3 font-mono dir-ltr">${escapeHtml(row.phone_number)}</td>
                         <td class="p-3">${statusBadge(row.is_active)}</td>
+                        <td class="p-3">${engineBadge(row.is_engine_active)}</td>
+                        <td class="p-3">${runtimeBadge(row)}</td>
                         <td class="p-3 whitespace-nowrap">${escapeHtml(formatDateTime(row.created_at))}</td>
                     </tr>
                 `).join("");
             } catch (err) {
                 console.error(err);
-                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-rose-400 text-center">خطا در ارتباط با سرور</td></tr>';
             }
         }
 
         guardAdminPage().then((ok) => {
-            if (ok) loadSessions();
+            if (!ok) return;
+            loadSessions();
+            setInterval(loadSessions, 8000);
         });
     </script>
 </body>

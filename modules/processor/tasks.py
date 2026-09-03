@@ -72,7 +72,7 @@ def process_raw_message(payload: dict) -> dict:
             keywords = keywords or cached.get("final_keywords") or cached.get("keywords")
             negative_keywords = negative_keywords or cached.get("negative_keywords")
     keywords = keywords or preset_rules["keywords"]
-    negative_keywords = negative_keywords or preset_rules["negative_keywords"]
+    negative_keywords = negative_keywords or preset_rules["negative_keywords"] or []
     fuzzy_threshold = payload.get("fuzzy_threshold", 85.0)
 
     # اگر هیچ کلمه‌ای تنظیم نشده باشد، نیازی به پردازش متن نیست
@@ -94,7 +94,25 @@ def process_raw_message(payload: dict) -> dict:
     config = MatchConfig(
         keywords=keywords,
         negative_keywords=negative_keywords,
-        fuzzy_threshold=fuzzy_threshold,
+        fuzzy_threshold=float(fuzzy_threshold),
+        min_text_len=int(payload.get("min_text_len", MatchConfig.min_text_len)),
+        min_meaningful_tokens=int(
+            payload.get("min_meaningful_tokens", MatchConfig.min_meaningful_tokens)
+        ),
+        require_min_tokens=bool(payload.get("require_min_tokens", True)),
+        min_fuzzy_len=int(payload.get("min_fuzzy_len", MatchConfig.min_fuzzy_len)),
+        min_text_to_keyword_ratio=float(
+            payload.get("min_text_to_keyword_ratio", MatchConfig.min_text_to_keyword_ratio)
+        ),
+        min_distinct_keywords_for_hot=int(
+            payload.get(
+                "min_distinct_keywords_for_hot",
+                MatchConfig.min_distinct_keywords_for_hot,
+            )
+        ),
+        min_exact_chars_for_hot=int(
+            payload.get("min_exact_chars_for_hot", MatchConfig.min_exact_chars_for_hot)
+        ),
     )
 
     # ۴. اجرای الگوریتم تطبیق کلمات کلیدی

@@ -19,6 +19,7 @@ from telethon.tl.types import User as TelethonUser
 from core.database import get_session_factory
 from core.logger import setup_logging
 from shared.models import TelegramSession, User as DBUser
+from shared.telegram_session import to_telethon_string_session
 
 logger = setup_logging(__name__)
 load_dotenv()
@@ -195,10 +196,10 @@ async def create_string_session(phone: str) -> str:
 
 
 async def load_client(session_string: str) -> TelegramClient:
-    """Build and connect a Telethon client from an existing StringSession."""
+    """Build and connect a Telethon client from a stored session string."""
     logger.info("Initializing TelegramClient from provided StringSession...")
-
-    client = _build_client(StringSession(session_string))
+    telethon_session = to_telethon_string_session(session_string)
+    client = _build_client(StringSession(telethon_session))
     await client.connect()
 
     if not await client.is_user_authorized():

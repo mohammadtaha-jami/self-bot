@@ -213,7 +213,7 @@ class LicenseRenewRequest(BaseModel):
 
 
 class AdminSessionResponse(BaseModel):
-    """Active Telegram session row for the admin sessions view."""
+    """Telegram session row for the admin sessions view."""
 
     id: int
     user_id: int
@@ -221,6 +221,8 @@ class AdminSessionResponse(BaseModel):
     full_name: Optional[str] = None
     phone_number: str
     is_active: bool
+    is_engine_active: bool = False
+    is_listening: bool = False
     created_at: datetime
 
 

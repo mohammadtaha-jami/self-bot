@@ -109,9 +109,24 @@
         }
     }
 
+    function setSendCodeLoading(isLoading) {
+        const btn = document.getElementById("send-code-btn");
+        const phoneInput = document.getElementById("phone-number");
+        if (!btn) return;
+        btn.disabled = isLoading;
+        if (phoneInput) phoneInput.disabled = isLoading;
+        if (isLoading) {
+            btn.innerHTML = '<svg class="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg><span>در حال ارسال...</span>';
+        } else {
+            btn.textContent = "ارسال کد";
+        }
+    }
+
     async function sendCode() {
         const userId = document.getElementById("target-user-id").value;
         const statusDiv = document.getElementById("connection-status");
+        const btn = document.getElementById("send-code-btn");
+        if (btn && btn.disabled) return;
         if (!userId) {
             alert("ابتدا کاربر مقصد را انتخاب کنید.");
             return;
@@ -121,6 +136,7 @@
             alert("شماره تلفن کاربر انتخابی خالی است.");
             return;
         }
+        setSendCodeLoading(true);
         try {
             const res = await fetch("/api/v1/telegram/send-code", {
                 method: "POST",
@@ -140,6 +156,8 @@
         } catch (err) {
             console.error(err);
             alert("خطا در ارتباط با سرور");
+        } finally {
+            setSendCodeLoading(false);
         }
     }
 

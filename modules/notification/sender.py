@@ -4,6 +4,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 from core.logger import setup_logging
+from shared.telegram_session import to_telethon_string_session
 
 logger = setup_logging(__name__)
 
@@ -33,7 +34,7 @@ async def send_lead_notification(
 
     try:
         async with TelegramClient(
-            StringSession(session_string), api_id, api_hash
+            StringSession(to_telethon_string_session(session_string)), api_id, api_hash
         ) as client:
             # ارسال پیام به Saved Messages (حساب me)
             await client.send_message(

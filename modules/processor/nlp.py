@@ -43,6 +43,8 @@ DIACRITICS_RE = re.compile(r"[\u064B-\u0652\u0670]")
 URL_RE = re.compile(r"https?://\S+|www\.\S+|t\.me/\S+|@[a-zA-Z0-9_]+")
 EXTRA_SPACES_RE = re.compile(r"\s+")
 EXTRA_ZWNJ_RE = re.compile(r"\u200c+")
+# حروف/ارقام فارسی، عربی و لاتین برای توکن معنادار و مرز کلمه
+MEANINGFUL_TOKEN_RE = re.compile(r"[0-9A-Za-z\u0600-\u06FF]+")
 
 
 def normalize_chars(text: str) -> str:
@@ -94,6 +96,35 @@ def clean_text(raw_text: str) -> str:
     text = normalize_spaces(text)
 
     return text
+
+
+def tokenize_meaningful_words(text: str) -> list[str]:
+    """توکن‌های حرف/رقم پس از تبدیل نیم‌فاصله به فاصله."""
+    if not text:
+        return []
+    prepared = text.replace("\u200c", " ")
+    return MEANINGFUL_TOKEN_RE.findall(prepared)
+
+
+def count_meaningful_tokens(text: str) -> int:
+    """تعداد کلمات معنادار فارسی/لاتین/عددی در متن نرمال‌شده."""
+    return len(tokenize_meaningful_words(text))
+
+
+def has_phrase_match(text: str, phrase: str) -> bool:
+    """
+    تطبیق عبارت بر پایهٔ دنبالهٔ متوالی توکن‌ها (مرز کلمه).
+    هم تک‌کلمه‌ای و هم چندکلمه‌ای را پوشش می‌دهد.
+    """
+    text_tokens = tokenize_meaningful_words(text)
+    phrase_tokens = tokenize_meaningful_words(phrase)
+    if not phrase_tokens or len(phrase_tokens) > len(text_tokens):
+        return False
+    window = len(phrase_tokens)
+    for index in range(len(text_tokens) - window + 1):
+        if text_tokens[index : index + window] == phrase_tokens:
+            return True
+    return False
 
 
 async def score_intent(text: str) -> tuple[float, LeadLevelEnum]:
