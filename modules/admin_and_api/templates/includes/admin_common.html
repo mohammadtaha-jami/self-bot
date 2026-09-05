@@ -62,6 +62,16 @@
         return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-400">غیرفعال</span>';
     }
 
+    function notifierBadge(user) {
+        if (user.is_notifier_active) {
+            const chatId = user.telegram_chat_id != null
+                ? `<span class="block font-mono text-[10px] text-emerald-400/70 mt-0.5 dir-ltr">${escapeHtml(user.telegram_chat_id)}</span>`
+                : "";
+            return `<span class="inline-flex flex-col items-start"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-400">روشن</span>${chatId}</span>`;
+        }
+        return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/15 text-slate-400">خاموش</span>';
+    }
+
     function logout() {
         localStorage.clear();
         fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" })

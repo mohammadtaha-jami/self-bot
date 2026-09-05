@@ -121,6 +121,27 @@
                     <p id="engine-license-expiry" class="text-lg font-semibold text-slate-200">-</p>
                 </div>
             </div>
+
+            <div class="mt-6 pt-6 border-t border-slate-700">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                    <div class="flex items-start gap-4 min-w-0">
+                        <div id="notifier-indicator-dot" class="mt-1 w-4 h-4 rounded-full bg-slate-500 shrink-0 ring-4 ring-slate-700/50"></div>
+                        <div>
+                            <h4 class="text-lg font-bold text-slate-200 mb-1">وضعیت ربات اطلاع‌رسانی</h4>
+                            <p id="notifier-indicator-label" class="text-sm text-slate-400">در حال دریافت وضعیت...</p>
+                            <p id="notifier-chat-id" class="hidden text-xs text-slate-500 mt-1 font-mono dir-ltr"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span id="notifier-toggle-label" class="text-sm text-slate-400">خاموش</span>
+                        <button id="notifier-connect-btn" type="button" onclick="connectNotifierBot()"
+                            class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+                            اتصال به ربات
+                        </button>
+                    </div>
+                </div>
+                <div id="notifier-status-message" class="hidden mt-4 text-sm rounded-lg px-4 py-2"></div>
+            </div>
         </section>
 
         <!-- Pipeline Live Log (collapsed terminal) -->
@@ -175,14 +196,16 @@
                     <thead class="bg-slate-700/50 text-slate-400 text-xs">
                         <tr>
                             <th class="p-3 rounded-r-lg">شناسه</th>
-                            <th class="p-3">کاربر</th>
+                            <th class="p-3">سطح</th>
+                            <th class="p-3">گروه</th>
+                            <th class="p-3">فرستنده</th>
                             <th class="p-3">پیام</th>
                             <th class="p-3 rounded-l-lg">تاریخ</th>
                         </tr>
                     </thead>
                     <tbody id="leads-table">
                         <tr class="border-b border-slate-700/50">
-                            <td class="p-3 text-slate-500" colspan="4">داده‌ای یافت نشد یا در حال بارگذاری است...</td>
+                            <td class="p-3 text-slate-500" colspan="6">در حال بارگذاری...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -210,7 +233,11 @@
                     document.getElementById("impersonation-banner").classList.toggle("hidden", !impersonating);
                     document.getElementById("username").innerText = data.full_name || data.username;
                     document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
-                    await Promise.all([loadKeywords(), loadListenFolders(), loadEngineStatus()]);
+                    await Promise.all([loadKeywords(), loadListenFolders(), loadEngineStatus(), loadNotifierStatus(), loadLeads()]);
+                    if (!notifierState.is_notifier_active) {
+                        startNotifierPolling();
+                    }
+                    startLeadsPolling();
                 } else {
                     logout();
                 }
@@ -221,6 +248,9 @@
 
         let engineBusy = false;
         let engineState = { engine_active: false, license_valid: false, indicator: "stopped" };
+        let notifierState = { is_notifier_active: false, telegram_chat_id: null };
+        let notifierPollTimer = null;
+        let leadsPollTimer = null;
         let pipelinePollTimer = null;
         let terminalOpen = false;
 
@@ -440,6 +470,176 @@
                 }
             } catch (err) {
                 console.error(err);
+            }
+        }
+
+        function showNotifierMessage(text, isError) {
+            const box = document.getElementById("notifier-status-message");
+            box.className = isError
+                ? "mt-4 text-sm rounded-lg px-4 py-2 bg-rose-500/10 text-rose-400 border border-rose-500/30"
+                : "mt-4 text-sm rounded-lg px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+            box.innerText = text;
+            box.classList.remove("hidden");
+        }
+
+        function updateNotifierUI(data) {
+            notifierState = data;
+            const dot = document.getElementById("notifier-indicator-dot");
+            const label = document.getElementById("notifier-indicator-label");
+            const chatEl = document.getElementById("notifier-chat-id");
+            const toggleLabel = document.getElementById("notifier-toggle-label");
+            const connectBtn = document.getElementById("notifier-connect-btn");
+            const isActive = Boolean(data.is_notifier_active);
+
+            if (isActive) {
+                dot.className = "mt-1 w-4 h-4 rounded-full shrink-0 ring-4 bg-emerald-400 ring-emerald-400/20";
+                label.className = "text-sm text-emerald-400";
+                label.innerText = "در حال ارسال — ربات متصل است";
+                toggleLabel.innerText = "روشن";
+                connectBtn.classList.add("hidden");
+                if (data.telegram_chat_id != null) {
+                    chatEl.classList.remove("hidden");
+                    chatEl.innerText = `شناسه چت: ${data.telegram_chat_id}`;
+                } else {
+                    chatEl.classList.add("hidden");
+                }
+                stopNotifierPolling();
+            } else {
+                dot.className = "mt-1 w-4 h-4 rounded-full shrink-0 ring-4 bg-rose-400 ring-rose-400/20";
+                label.className = "text-sm text-rose-400";
+                label.innerText = "متوقف شده — ربات متصل نیست";
+                toggleLabel.innerText = "خاموش";
+                chatEl.classList.add("hidden");
+                connectBtn.classList.remove("hidden");
+                connectBtn.disabled = false;
+            }
+        }
+
+        function stopNotifierPolling() {
+            if (notifierPollTimer) {
+                clearInterval(notifierPollTimer);
+                notifierPollTimer = null;
+            }
+        }
+
+        function startNotifierPolling() {
+            if (notifierState.is_notifier_active) return;
+            stopNotifierPolling();
+            notifierPollTimer = setInterval(loadNotifierStatus, 5000);
+        }
+
+        async function loadNotifierStatus() {
+            try {
+                const res = await fetch("/api/v1/notifications/status", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data) return;
+                const wasConnected = notifierState.is_notifier_active;
+                updateNotifierUI(data);
+                if (!wasConnected && data.is_notifier_active) {
+                    showNotifierMessage("اتصال به ربات با موفقیت برقرار شد. نوتیفیکیشن لیدها فعال است.", false);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function connectNotifierBot() {
+            const connectBtn = document.getElementById("notifier-connect-btn");
+            connectBtn.disabled = true;
+            showNotifierMessage("در حال ساخت لینک اختصاصی...", false);
+            try {
+                const res = await fetch("/api/v1/notifications/generate-link", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    const detail = (data && data.detail) || "ساخت لینک انجام نشد.";
+                    showNotifierMessage(detail, true);
+                    connectBtn.disabled = false;
+                    return;
+                }
+                window.open(data.link, "_blank");
+                showNotifierMessage(
+                    "تلگرام در تب جدید باز شد. در ربات دکمه Start را بزنید؛ وضعیت اینجا به‌صورت خودکار به‌روز می‌شود.",
+                    false
+                );
+                startNotifierPolling();
+            } catch (err) {
+                console.error(err);
+                showNotifierMessage("خطا در ارتباط با سرور", true);
+                connectBtn.disabled = false;
+            }
+        }
+
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden) {
+                loadNotifierStatus();
+                loadLeads();
+            }
+        });
+
+        function leadLevelBadge(level) {
+            const value = String(level || "").toLowerCase();
+            if (value === "hot") {
+                return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-400">HOT</span>';
+            }
+            if (value === "warm") {
+                return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300">WARM</span>';
+            }
+            return '<span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/15 text-slate-400">LOW</span>';
+        }
+
+        function formatLeadDateTime(isoString) {
+            if (!isoString) return "—";
+            try {
+                return new Date(isoString).toLocaleString("fa-IR", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                });
+            } catch {
+                return isoString;
+            }
+        }
+
+        function startLeadsPolling() {
+            if (leadsPollTimer) clearInterval(leadsPollTimer);
+            leadsPollTimer = setInterval(loadLeads, 8000);
+        }
+
+        async function loadLeads() {
+            const tbody = document.getElementById("leads-table");
+            if (!tbody) return;
+            try {
+                const res = await fetch("/api/v1/leads/?limit=50", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok) {
+                    const detail = (data && data.detail) || "خطا در دریافت لیدها";
+                    tbody.innerHTML = `<tr class="border-b border-slate-700/50"><td class="p-3 text-rose-400" colspan="6">${escapeHtml(detail)}</td></tr>`;
+                    return;
+                }
+                if (!Array.isArray(data) || data.length === 0) {
+                    tbody.innerHTML = '<tr class="border-b border-slate-700/50"><td class="p-3 text-slate-500" colspan="6">هنوز لیدی ثبت نشده است.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.map((lead) => {
+                    const sender = lead.sender_username ? `@${lead.sender_username}` : "—";
+                    return `<tr class="border-b border-slate-700/50 hover:bg-slate-700/20">
+                        <td class="p-3 font-mono">${lead.id}</td>
+                        <td class="p-3">${leadLevelBadge(lead.level)}</td>
+                        <td class="p-3">${escapeHtml(lead.chat_title || "—")}</td>
+                        <td class="p-3 font-mono dir-ltr">${escapeHtml(sender)}</td>
+                        <td class="p-3 max-w-md"><span class="line-clamp-2">${escapeHtml(lead.text || "—")}</span></td>
+                        <td class="p-3 whitespace-nowrap">${escapeHtml(formatLeadDateTime(lead.created_at))}</td>
+                    </tr>`;
+                }).join("");
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr class="border-b border-slate-700/50"><td class="p-3 text-rose-400" colspan="6">خطا در ارتباط با سرور</td></tr>';
             }
         }
 

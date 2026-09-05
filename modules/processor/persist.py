@@ -7,7 +7,7 @@ from sqlalchemy import select
 from core.database import get_session_factory
 from core.logger import setup_logging
 from modules.processor.matching import MatchResult
-from shared.models import Lead, Message, Person, Source
+from shared.models import Lead, Message, Person, Source, User
 
 logger = setup_logging(__name__)
 
@@ -28,15 +28,17 @@ def _parse_message_date(value) -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def persist_matched_lead(payload: dict, match_result: MatchResult) -> int | None:
-    """Insert source/person/message/lead rows for a matched Telegram message."""
+async def persist_matched_lead(
+    payload: dict, match_result: MatchResult
+) -> tuple[int | None, int | None, bool]:
+    """Insert lead rows and return (lead_id, telegram_chat_id, is_notifier_active)."""
     user_id = payload.get("user_id")
     chat_id = payload.get("chat_id")
     sender_id = payload.get("sender_id")
     telegram_message_id = payload.get("message_id")
     if not user_id or chat_id is None or telegram_message_id is None:
         logger.warning("Skip lead persist: missing user_id/chat_id/message_id")
-        return None
+        return None, None, False
     if sender_id is None:
         sender_id = int(chat_id)
 
@@ -91,5 +93,14 @@ async def persist_matched_lead(payload: dict, match_result: MatchResult) -> int 
         db.add(lead)
         await db.commit()
         await db.refresh(lead)
+        owner = (
+            await db.execute(
+                select(User.telegram_chat_id, User.is_notifier_active).where(
+                    User.id == int(user_id)
+                )
+            )
+        ).one_or_none()
         logger.info("Lead persisted id=%s user_id=%s", lead.id, user_id)
-        return lead.id
+        if owner is None:
+            return lead.id, None, False
+        return lead.id, owner.telegram_chat_id, bool(owner.is_notifier_active)

@@ -19,3 +19,6 @@ python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.9
 jinja2
 pyrogram
+aiogram>=3.13.0
+aiohttp-socks>=0.9.0
+httpx[socks]>=0.27.0

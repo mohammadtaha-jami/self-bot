@@ -39,6 +39,13 @@ def user_listen_scope_key(user_id: int | str) -> str:
     return f"user:{user_id}:listen_scope"
 
 
+BOT_LINK_TTL_SECONDS = 300
+
+
+def bot_link_key(token: str) -> str:
+    return f"bot_link:{token}"
+
+
 ALLOWED_CHATS_TTL_SECONDS = 6 * 60 * 60
 
 

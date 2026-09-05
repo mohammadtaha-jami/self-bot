@@ -1,6 +1,7 @@
 """SQLAlchemy async engine and session factory setup."""
 
 from collections.abc import AsyncGenerator
+import asyncio
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -45,6 +46,31 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
             autoflush=False,
         )
     return _session_factory
+
+
+async def dispose_engine() -> None:
+    """Drop the shared async engine so the next loop can create a fresh pool.
+
+    Celery tasks use ``asyncio.run()`` which closes the loop after each call.
+    Reusing pooled asyncpg connections across loops raises Event loop is closed.
+    """
+    global _engine, _session_factory
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None
+        _session_factory = None
+
+
+def run_async_isolated(coro):
+    """Run a coroutine in a fresh event loop and dispose the SQLAlchemy pool after."""
+
+    async def _wrapped():
+        try:
+            return await coro
+        finally:
+            await dispose_engine()
+
+    return asyncio.run(_wrapped())
 
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:

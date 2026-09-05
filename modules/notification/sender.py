@@ -1,51 +1,105 @@
-"""Lead notification sender via Telegram Saved Messages or Bot API."""
+"""Lead notification sender via Telegram Bot API (sync, Celery-safe)."""
 
-from telethon import TelegramClient
-from telethon.sessions import StringSession
+from __future__ import annotations
 
+import httpx
+from sqlalchemy import select
+
+from core.config import get_settings
+from core.database import get_session_factory, run_async_isolated
 from core.logger import setup_logging
-from shared.telegram_session import to_telethon_string_session
+from shared.models import User
 
 logger = setup_logging(__name__)
 
 
-async def send_lead_notification(
-    api_id: int,
-    api_hash: str,
-    session_string: str,
-    message_text: str,
-    lead_id: int | None = None,
+async def _deactivate_notifier(user_id: int) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            return
+        user.is_notifier_active = False
+        await db.commit()
+        logger.info("Notifier deactivated for user_id=%s (bot blocked)", user_id)
+
+
+def _proxy_url() -> str | None:
+    settings = get_settings()
+    if not settings.use_proxy:
+        return None
+    return f"{settings.proxy_type}://{settings.proxy_host}:{settings.proxy_port}"
+
+
+def send_lead_notification(
+    chat_id: int,
+    formatted_text: str,
+    reply_markup: dict,
     user_id: int | None = None,
 ) -> bool:
     """
-    Deliver a lead alert to the user's Saved Messages via Telethon.
+    Deliver a lead alert to the user's notifier bot chat via Bot API.
 
-    Args:
-        api_id: Telegram API ID
-        api_hash: Telegram API Hash
-        session_string: Active user StringSession
-        message_text: Formatted markdown text
-        lead_id: Optional Database ID (for future logging)
-        user_id: Optional Recipient user ID (for future logging)
+    On Telegram error 403 (user blocked the bot), sets is_notifier_active=False.
     """
-    if not all([api_id, api_hash, session_string]):
-        logger.error("Missing Telegram session details for sending notification.")
+    settings = get_settings()
+    token = settings.resolved_bot_token
+    if not token:
+        logger.error("BOT_TOKEN / NOTIFIER_BOT_TOKEN is not configured.")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    body: dict = {
+        "chat_id": chat_id,
+        "text": formatted_text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+        "disable_notification": False,
+    }
+    if reply_markup.get("inline_keyboard"):
+        body["reply_markup"] = reply_markup
+
+    proxy = _proxy_url()
+    try:
+        with httpx.Client(timeout=30.0, proxy=proxy) as client:
+            response = client.post(url, json=body)
+    except ImportError:
+        logger.exception(
+            "SOCKS proxy needs httpx[socks]. Install with: pip install 'httpx[socks]'"
+        )
+        return False
+    except httpx.HTTPError as exc:
+        logger.error("Notifier HTTP request failed: %s", exc, exc_info=True)
         return False
 
     try:
-        async with TelegramClient(
-            StringSession(to_telethon_string_session(session_string)), api_id, api_hash
-        ) as client:
-            # ارسال پیام به Saved Messages (حساب me)
-            await client.send_message(
-                "me", message_text, parse_mode="md", link_preview=False
-            )
-            logger.info(
-                "Lead notification delivered to Saved Messages. (lead_id=%s, user_id=%s)",
-                lead_id,
-                user_id,
-            )
-            return True
-    except Exception as e:
-        logger.error("Failed to send lead notification: %s", e, exc_info=True)
+        data = response.json()
+    except ValueError:
+        logger.error(
+            "Notifier API returned non-JSON response (status=%s)",
+            response.status_code,
+        )
         return False
+
+    if data.get("ok"):
+        logger.info("Lead notification sent to chat_id=%s (user_id=%s)", chat_id, user_id)
+        return True
+
+    error_code = data.get("error_code")
+    description = data.get("description", "unknown error")
+    logger.warning(
+        "Notifier API error chat_id=%s user_id=%s code=%s desc=%s",
+        chat_id,
+        user_id,
+        error_code,
+        description,
+    )
+
+    if error_code == 403 and user_id is not None:
+        try:
+            run_async_isolated(_deactivate_notifier(user_id))
+        except Exception:
+            logger.exception("Failed to deactivate notifier for user_id=%s", user_id)
+
+    return False

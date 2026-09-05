@@ -34,6 +34,7 @@ async def on_new_message(
         "chat_title": getattr(chat, "title", None)
         or getattr(chat, "first_name", None)
         or "Unknown",
+        "chat_username": getattr(chat, "username", None),
         "sender_id": event.sender_id,
         "sender_username": getattr(sender, "username", None),
         "message_id": event.id,

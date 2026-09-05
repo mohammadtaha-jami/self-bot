@@ -45,6 +45,28 @@ class Settings(BaseSettings):
     telegram_api_id: int | None = None
     telegram_api_hash: str | None = None
 
+    # Local SOCKS/HTTP proxy (same flags as Telethon listener)
+    use_proxy: bool = False
+    proxy_type: str = "socks5"
+    proxy_host: str = "127.0.0.1"
+    proxy_port: int = 10808
+
+    # Notifier bot (Phase 6 deep link)
+    bot_token: str | None = None
+    bot_username: str | None = None
+    notifier_bot_token: str | None = None
+
+    @property
+    def resolved_bot_token(self) -> str | None:
+        """BOT_TOKEN, falling back to NOTIFIER_BOT_TOKEN."""
+        raw = (self.bot_token or self.notifier_bot_token or "").strip()
+        return raw or None
+
+    @property
+    def resolved_bot_username(self) -> str | None:
+        raw = (self.bot_username or "").strip().lstrip("@")
+        return raw or None
+
     @property
     def database_url(self) -> str:
         """Async SQLAlchemy connection URL for PostgreSQL."""

@@ -1,8 +1,6 @@
 """Async processing tasks for message ingestion and lead generation."""
 
-import asyncio
-import os
-
+from core.database import run_async_isolated
 from core.logger import setup_logging
 from modules.processor.matching import MatchConfig, match_keywords
 from modules.processor.nlp import clean_text
@@ -13,7 +11,7 @@ from modules.processor.presets import (
     get_user_keywords_cache,
 )
 from modules.processor.worker import celery_app
-from modules.notification.formatter import format_lead_message
+from modules.notification.formatter import build_inline_keyboard, format_lead_message
 from modules.notification.sender import send_lead_notification
 
 logger = setup_logging(__name__)
@@ -142,17 +140,29 @@ def process_raw_message(payload: dict) -> dict:
     }
 
     lead_id = None
+    telegram_chat_id = None
+    is_notifier_active = False
     try:
-        lead_id = asyncio.run(persist_matched_lead(payload, match_result))
+        lead_id, telegram_chat_id, is_notifier_active = run_async_isolated(
+            persist_matched_lead(payload, match_result)
+        )
     except Exception:
         logger.exception("Failed to persist lead for message %s", message_id)
 
-    message_text = format_lead_message(payload, lead_data)
-    session_string = payload.get("session_string")
-    celery_app.send_task(
-        "tasks.publish_lead_notification",
-        args=[session_string, message_text],
-    )
+    if user_id and lead_id is not None and telegram_chat_id and is_notifier_active:
+        formatted_text = format_lead_message(payload, lead_data)
+        reply_markup = build_inline_keyboard(payload)
+        celery_app.send_task(
+            "tasks.publish_lead_notification",
+            args=[int(telegram_chat_id), formatted_text, reply_markup, int(user_id)],
+        )
+    elif user_id and lead_id is not None:
+        logger.info(
+            "Notifier skipped for user %s (active=%s chat_id=%s)",
+            user_id,
+            is_notifier_active,
+            telegram_chat_id,
+        )
 
     return {
         "status": "lead_created",
@@ -166,16 +176,12 @@ def process_raw_message(payload: dict) -> dict:
 
 
 @celery_app.task(name="tasks.publish_lead_notification")
-def publish_lead_notification(session_string: str, message_text: str) -> dict:
-    """Send a formatted lead alert to Telegram Saved Messages."""
-    api_id = os.getenv("TELEGRAM_API_ID")
-    api_hash = os.getenv("TELEGRAM_API_HASH")
-    sent = asyncio.run(
-        send_lead_notification(
-            int(api_id) if api_id else 0,
-            api_hash or "",
-            session_string or "",
-            message_text,
-        )
-    )
-    return {"status": "sent" if sent else "failed"}
+def publish_lead_notification(
+    chat_id: int,
+    formatted_text: str,
+    reply_markup: dict,
+    user_id: int | None = None,
+) -> dict:
+    """Send a formatted lead alert via the notifier bot."""
+    sent = send_lead_notification(chat_id, formatted_text, reply_markup, user_id=user_id)
+    return {"status": "sent" if sent else "failed", "chat_id": chat_id}

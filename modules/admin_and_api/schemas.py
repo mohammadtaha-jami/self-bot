@@ -116,7 +116,7 @@ class TokenData(BaseModel):
 
 
 class LeadResponse(BaseModel):
-    """Public representation of a detected lead."""
+    """Public representation of a detected lead for the dashboard."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -125,6 +125,10 @@ class LeadResponse(BaseModel):
     level: LeadLevelEnum
     score: float
     created_at: datetime
+    chat_title: Optional[str] = None
+    sender_username: Optional[str] = None
+    text: Optional[str] = None
+    matched_keywords: list[str] = Field(default_factory=list)
 
 
 class KeywordCreate(BaseModel):
@@ -171,6 +175,20 @@ class LicenseStatusResponse(BaseModel):
     is_valid: bool
     days_remaining: int
     subscription_end: Optional[datetime] = None
+
+
+class GenerateLinkResponse(BaseModel):
+    """One-time Telegram deep link for connecting the notifier bot."""
+
+    link: str
+    expires_in: int = 300
+
+
+class NotificationStatusResponse(BaseModel):
+    """Whether the signed-in user has linked the notifier bot."""
+
+    is_notifier_active: bool
+    telegram_chat_id: Optional[int] = None
 
 
 class EngineStartRequest(BaseModel):
