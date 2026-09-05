@@ -76,6 +76,19 @@ class User(BaseModel):
         nullable=True,
         comment="Cached Telegram folder title for the dashboard",
     )
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        nullable=True,
+        index=True,
+        comment="Notifier bot private chat id (Phase 6)",
+    )
+    is_notifier_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
+        comment="True when the user has linked the notifier bot",
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     dashboard_password: Mapped[Optional[str]] = mapped_column(

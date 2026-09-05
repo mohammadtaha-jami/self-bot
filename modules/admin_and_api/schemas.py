@@ -36,6 +36,8 @@ class UserResponse(BaseModel):
     phone_number: Optional[str] = None
     telegram_username: Optional[str] = None
     telegram_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    is_notifier_active: bool = False
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False
@@ -53,6 +55,8 @@ class AdminUserResponse(BaseModel):
     phone_number: Optional[str] = None
     telegram_username: Optional[str] = None
     telegram_id: Optional[int] = None
+    telegram_chat_id: Optional[int] = None
+    is_notifier_active: bool = False
     full_name: Optional[str] = None
     is_active: bool
     is_admin: bool = False

@@ -40,6 +40,8 @@ def _to_admin_user(user: User) -> AdminUserResponse:
         phone_number=user.phone_number,
         telegram_username=user.telegram_username,
         telegram_id=user.telegram_id,
+        telegram_chat_id=user.telegram_chat_id,
+        is_notifier_active=user.is_notifier_active,
         full_name=user.full_name,
         is_active=user.is_active,
         is_admin=user.is_admin,
