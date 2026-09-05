@@ -11,11 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.cache import (
     append_pipeline_log,
+    clear_listen_scope,
     listener_heartbeat_key,
     processor_heartbeat_key,
     publish_engine_control,
     read_user_keyword_count,
     service_heartbeat_age_seconds,
+    sync_listen_scope,
     sync_user_keywords_payload,
     sync_user_status,
 )
@@ -106,10 +108,93 @@ async def _set_engine_flag(db: AsyncSession, user_id: int, is_engine_active: boo
         .where(TelegramSession.user_id == user_id)
         .values(is_engine_active=is_engine_active)
     )
-    return int(result.rowcount or 0)
+    rowcount = getattr(result, "rowcount", 0)
+    return int(rowcount or 0)
 
 
-async def run_start_pipeline(user: User, db: AsyncSession) -> list[dict[str, Any]]:
+async def _sync_folder_scope(
+    user: User,
+    session: TelegramSession,
+    folder_id: int | None,
+    steps: list[dict[str, Any]],
+    db: AsyncSession,
+) -> None:
+    from modules.listener.auth import _disconnect_client, load_client
+    from modules.listener.dialog_filters import (
+        extract_folder_chat_ids,
+        fetch_dialog_filter_items,
+        find_dialog_filter,
+        summarize_dialog_filters,
+    )
+
+    if folder_id is None:
+        user.listen_folder_id = None
+        user.listen_folder_title = None
+        await db.flush()
+        sync_listen_scope(user.id, mode="all")
+        step = _step(
+            "sync_folder_scope",
+            "پوشه هدف شنود",
+            "user:{id}:allowed_chats",
+            "success",
+            "حالت همه: شنود گروه‌ها و کانال‌ها بدون محدودیت پوشه.",
+        )
+        steps.append(step)
+        _log_step(user.id, step)
+        return
+
+    client = await load_client(session.session_string)
+    try:
+        items = await fetch_dialog_filter_items(client)
+        folders = summarize_dialog_filters(items)
+        selected = find_dialog_filter(items, folder_id)
+        if selected is None:
+            titles = "، ".join(item["title"] for item in folders) or "هیچ پوشهٔ سفارشی"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"پوشه انتخاب‌شده در تلگرام یافت نشد. پوشه‌های موجود: {titles}",
+            )
+        title = next((item["title"] for item in folders if item["id"] == int(folder_id)), str(folder_id))
+        chat_ids = await extract_folder_chat_ids(client, selected)
+        if not chat_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="این پوشه چت مشخصی ندارد. چت‌ها را داخل پوشه تلگرام اضافه کنید یا گزینه «همه» را انتخاب کنید.",
+            )
+        user.listen_folder_id = int(folder_id)
+        user.listen_folder_title = title[:200]
+        await db.flush()
+        stored = sync_listen_scope(
+            user.id,
+            mode="folder",
+            folder_id=int(folder_id),
+            folder_title=title,
+            chat_ids=chat_ids,
+        )
+        step = _step(
+            "sync_folder_scope",
+            "پوشه هدف شنود",
+            "GetDialogFiltersRequest → user:{id}:allowed_chats",
+            "success",
+            f"پوشه «{title}»: {stored} شناسه در Redis ذخیره شد.",
+        )
+        steps.append(step)
+        _log_step(user.id, step)
+        logger.info(
+            "Folder scope user=%s folder=%s stored=%s",
+            user.id,
+            folder_id,
+            stored,
+        )
+    finally:
+        await _disconnect_client(client)
+
+
+async def run_start_pipeline(
+    user: User,
+    db: AsyncSession,
+    folder_id: int | None = None,
+) -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = []
 
     if not user.is_active:
@@ -194,6 +279,26 @@ async def run_start_pipeline(user: User, db: AsyncSession) -> list[dict[str, Any
     )
     steps.append(step)
     _log_step(user.id, step)
+
+    try:
+        await _sync_folder_scope(user, session, folder_id, steps, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Folder scope sync failed for user %s", user.id)
+        step = _step(
+            "sync_folder_scope",
+            "پوشه هدف شنود",
+            "user:{id}:allowed_chats از DialogFilter",
+            "error",
+            str(exc),
+        )
+        steps.append(step)
+        _log_step(user.id, step)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"خواندن پوشه‌های تلگرام ناموفق بود: {exc}",
+        ) from exc
 
     custom = await _custom_keywords(db, user.id)
     bundle = _bundle(user, custom)
@@ -299,6 +404,7 @@ async def run_stop_pipeline(user: User, db: AsyncSession) -> list[dict[str, Any]
     _log_step(user.id, step)
 
     sync_user_status(user.id, False, license.is_valid)
+    clear_listen_scope(user.id)
     step = _step(
         "set_redis_status",
         "Flag Redis",

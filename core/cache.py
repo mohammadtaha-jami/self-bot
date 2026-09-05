@@ -31,6 +31,17 @@ def user_pipeline_log_key(user_id: int | str) -> str:
     return f"user:{user_id}:pipeline_log"
 
 
+def user_allowed_chats_key(user_id: int | str) -> str:
+    return f"user:{user_id}:allowed_chats"
+
+
+def user_listen_scope_key(user_id: int | str) -> str:
+    return f"user:{user_id}:listen_scope"
+
+
+ALLOWED_CHATS_TTL_SECONDS = 6 * 60 * 60
+
+
 def listener_heartbeat_key() -> str:
     return "service:listener:heartbeat"
 
@@ -129,6 +140,93 @@ def read_user_status(user_id: int) -> dict[str, bool]:
         "engine_active": bool(data.get("engine_active")),
         "license_valid": bool(data.get("license_valid")),
     }
+
+
+def sync_listen_scope(
+    user_id: int,
+    *,
+    mode: str,
+    folder_id: int | None = None,
+    folder_title: str | None = None,
+    chat_ids: set[int] | None = None,
+) -> int:
+    """Persist listen scope JSON and optional Redis SET of allowed chat IDs."""
+    client = get_sync_redis()
+    scope = {
+        "mode": mode,
+        "folder_id": folder_id,
+        "folder_title": folder_title,
+        "chat_count": len(chat_ids) if chat_ids is not None else None,
+    }
+    client.set(user_listen_scope_key(user_id), json.dumps(scope, ensure_ascii=False))
+    chats_key = user_allowed_chats_key(user_id)
+    client.delete(chats_key)
+    if mode != "folder":
+        return 0
+    members = [str(chat_id) for chat_id in sorted(chat_ids or [])]
+    if members:
+        client.sadd(chats_key, *members)
+        client.expire(chats_key, ALLOWED_CHATS_TTL_SECONDS)
+    return len(members)
+
+
+def read_listen_scope(user_id: int) -> dict[str, Any]:
+    client = get_sync_redis()
+    raw = client.get(user_listen_scope_key(user_id))
+    if not raw:
+        return {"mode": "all", "folder_id": None, "folder_title": None, "chat_count": None}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"mode": "all", "folder_id": None, "folder_title": None, "chat_count": None}
+    if not isinstance(data, dict):
+        return {"mode": "all", "folder_id": None, "folder_title": None, "chat_count": None}
+    return {
+        "mode": data.get("mode") or "all",
+        "folder_id": data.get("folder_id"),
+        "folder_title": data.get("folder_title"),
+        "chat_count": data.get("chat_count"),
+    }
+
+
+def clear_listen_scope(user_id: int) -> None:
+    client = get_sync_redis()
+    client.delete(user_listen_scope_key(user_id), user_allowed_chats_key(user_id))
+
+
+def is_chat_allowed(user_id: int | None, chat_id: int | None) -> bool:
+    """Fast Redis SISMEMBER check; mode=all (or missing scope) allows every chat."""
+    if user_id is None:
+        return True
+    scope = read_listen_scope(user_id)
+    if scope.get("mode") != "folder":
+        return True
+    if chat_id is None:
+        return False
+    client = get_sync_redis()
+    return bool(client.sismember(user_allowed_chats_key(user_id), str(chat_id)))
+
+
+def should_ingest_message(
+    user_id: int | None,
+    chat_id: int | None,
+    *,
+    is_group: bool,
+    is_channel: bool,
+    is_private: bool,
+) -> bool:
+    """Folder-scoped SISMEMBER, otherwise only groups/channels (legacy 'all' mode)."""
+    if user_id is None:
+        return bool(is_group or is_channel)
+    scope = read_listen_scope(user_id)
+    if scope.get("mode") != "folder":
+        return bool(is_group or is_channel)
+    if chat_id is None:
+        return False
+    client = get_sync_redis()
+    if not client.sismember(user_allowed_chats_key(user_id), str(chat_id)):
+        return False
+    return bool(is_group or is_channel or is_private)
 
 
 def publish_engine_control(action: str, user_id: int) -> None:

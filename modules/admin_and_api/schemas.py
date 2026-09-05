@@ -169,6 +169,26 @@ class LicenseStatusResponse(BaseModel):
     subscription_end: Optional[datetime] = None
 
 
+class EngineStartRequest(BaseModel):
+    """Optional Telegram chat-folder scope when starting the engine."""
+
+    folder_id: Optional[int] = None
+
+
+class TelegramFolderOption(BaseModel):
+    """One Telegram Dialog Filter (chat folder) for the dashboard dropdown."""
+
+    id: Optional[int] = None
+    title: str
+    kind: str = "all"
+
+
+class TelegramFolderListResponse(BaseModel):
+    folders: list[TelegramFolderOption]
+    selected_folder_id: Optional[int] = None
+    detail: Optional[str] = None
+
+
 class EngineStatusResponse(BaseModel):
     """Live engine flag, cached keyword count, and license window."""
 
@@ -180,6 +200,10 @@ class EngineStatusResponse(BaseModel):
     indicator: str = Field(
         description="listening | stopped | expired",
     )
+    listen_mode: str = "all"
+    listen_folder_id: Optional[int] = None
+    listen_folder_title: Optional[str] = None
+    allowed_chat_count: Optional[int] = None
 
 
 class EnginePipelineStep(BaseModel):

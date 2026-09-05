@@ -1,6 +1,8 @@
 """Telethon event handlers for incoming Telegram messages."""
 
 from telethon import events
+
+from core.cache import should_ingest_message
 from core.logger import setup_logging
 from modules.listener.producer import publish_raw_message
 
@@ -14,7 +16,13 @@ async def on_new_message(
     business_type: str | None = None,
 ) -> None:
     """Handle a single incoming NewMessage event and forward payload to Celery."""
-    if not (event.is_group or event.is_channel):
+    if not should_ingest_message(
+        user_id,
+        event.chat_id,
+        is_group=bool(event.is_group),
+        is_channel=bool(event.is_channel),
+        is_private=bool(event.is_private),
+    ):
         return
 
     chat = await event.get_chat()
@@ -23,7 +31,9 @@ async def on_new_message(
     message_data = {
         "user_id": user_id,
         "chat_id": event.chat_id,
-        "chat_title": getattr(chat, "title", "Unknown Group"),
+        "chat_title": getattr(chat, "title", None)
+        or getattr(chat, "first_name", None)
+        or "Unknown",
         "sender_id": event.sender_id,
         "sender_username": getattr(sender, "username", None),
         "message_id": event.id,

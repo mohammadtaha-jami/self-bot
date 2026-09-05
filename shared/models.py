@@ -66,6 +66,16 @@ class User(BaseModel):
         nullable=True,
         comment="e.g. real_estate, crypto, general, or a custom value",
     )
+    listen_folder_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Telegram DialogFilter id; NULL means listen to all groups/channels",
+    )
+    listen_folder_title: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        nullable=True,
+        comment="Cached Telegram folder title for the dashboard",
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     dashboard_password: Mapped[Optional[str]] = mapped_column(

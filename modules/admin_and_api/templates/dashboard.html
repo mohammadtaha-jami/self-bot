@@ -88,13 +88,22 @@
                         <p id="engine-indicator-label" class="text-sm text-slate-400">در حال دریافت وضعیت...</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-4">
+                <div class="flex flex-col sm:flex-row sm:items-end gap-4">
+                    <div class="min-w-[14rem]">
+                        <label for="listen-folder" class="block text-xs text-slate-400 mb-1">پوشه هدف شنود</label>
+                        <select id="listen-folder"
+                            class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <option value="all">همه (گروه‌ها و کانال‌ها)</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-4">
                     <span id="engine-toggle-label" class="text-sm text-slate-400">خاموش</span>
                     <button id="engine-toggle-btn" type="button" onclick="toggleEngine()"
                         class="relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-slate-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-pressed="false" disabled>
                         <span id="engine-toggle-knob" class="pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 translate-x-0"></span>
                     </button>
+                    </div>
                 </div>
             </div>
             <div id="engine-status-message" class="hidden mt-4 text-sm rounded-lg px-4 py-2"></div>
@@ -201,7 +210,7 @@
                     document.getElementById("impersonation-banner").classList.toggle("hidden", !impersonating);
                     document.getElementById("username").innerText = data.full_name || data.username;
                     document.getElementById("business-type").innerText = data.business_type || "ثبت نشده";
-                    await Promise.all([loadKeywords(), loadEngineStatus()]);
+                    await Promise.all([loadKeywords(), loadListenFolders(), loadEngineStatus()]);
                 } else {
                     logout();
                 }
@@ -376,6 +385,62 @@
                 : "pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition duration-200 translate-x-0";
             toggleLabel.innerText = isActive ? "روشن" : "خاموش";
             toggleBtn.disabled = engineBusy || (!data.license_valid && !isActive);
+            applyFolderSelection(data);
+            if (isActive && data.listen_mode === "folder" && data.listen_folder_title) {
+                const count = data.allowed_chat_count != null ? ` — ${data.allowed_chat_count} چت` : "";
+                label.innerText = `در حال شنود پوشه «${data.listen_folder_title}»${count}`;
+            }
+        }
+
+        function applyFolderSelection(data) {
+            const select = document.getElementById("listen-folder");
+            if (!select) return;
+            select.disabled = Boolean(data.engine_active) || engineBusy;
+            if (data.listen_folder_id != null) {
+                const value = String(data.listen_folder_id);
+                if ([...select.options].some((option) => option.value === value)) {
+                    select.value = value;
+                }
+            } else if (!data.engine_active || data.listen_mode === "all") {
+                if ([...select.options].some((option) => option.value === "all")) {
+                    select.value = "all";
+                }
+            }
+        }
+
+        async function loadListenFolders() {
+            const select = document.getElementById("listen-folder");
+            if (!select) return;
+            try {
+                const res = await fetch("/api/v1/engine/folders", {
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data) return;
+                const selected = data.selected_folder_id != null
+                    ? String(data.selected_folder_id)
+                    : (select.value || "all");
+                select.innerHTML = "";
+                (data.folders || []).forEach((folder) => {
+                    const option = document.createElement("option");
+                    option.value = folder.id == null ? "all" : String(folder.id);
+                    option.textContent = folder.title;
+                    select.appendChild(option);
+                });
+                if (![...select.options].some((option) => option.value === "all")) {
+                    const allOpt = document.createElement("option");
+                    allOpt.value = "all";
+                    allOpt.textContent = "همه (گروه‌ها و کانال‌ها)";
+                    select.insertBefore(allOpt, select.firstChild);
+                }
+                if ([...select.options].some((option) => option.value === selected)) {
+                    select.value = selected;
+                } else {
+                    select.value = "all";
+                }
+            } catch (err) {
+                console.error(err);
+            }
         }
 
         function showEngineMessage(text, isError) {
@@ -416,11 +481,19 @@
 
             engineBusy = true;
             document.getElementById("engine-toggle-btn").disabled = true;
+            document.getElementById("listen-folder").disabled = true;
             const endpoint = shouldStart ? "/api/v1/engine/start" : "/api/v1/engine/stop";
+            const folderValue = document.getElementById("listen-folder").value;
+            const startBody = {
+                folder_id: folderValue === "all" || folderValue === "" ? null : parseInt(folderValue, 10),
+            };
             try {
                 const res = await fetch(endpoint, {
                     method: "POST",
-                    headers: { "Authorization": `Bearer ${token}` }
+                    headers: shouldStart
+                        ? { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" }
+                        : { "Authorization": `Bearer ${token}` },
+                    body: shouldStart ? JSON.stringify(startBody) : undefined,
                 });
                 const data = await res.json();
                 if (!res.ok) {
@@ -449,6 +522,7 @@
             } finally {
                 engineBusy = false;
                 document.getElementById("engine-toggle-btn").disabled = !engineState.license_valid && !engineState.engine_active;
+                applyFolderSelection(engineState);
             }
         }
 
