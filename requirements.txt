@@ -22,3 +22,6 @@ pyrogram
 aiogram>=3.13.0
 aiohttp-socks>=0.9.0
 httpx[socks]>=0.27.0
+onnxruntime>=1.17.0
+tokenizers>=0.15.0
+numpy>=1.26.0
