@@ -12,6 +12,7 @@ from modules.ai_engine.classifier import (
     IntentClassifier,
     get_classifier,
     is_actionable_hiring_lead,
+    predict_intent,
 )
 from modules.ai_engine.fallback import fallback_to_keywords
 from modules.ai_engine.labels import IntentEnum
@@ -174,6 +175,76 @@ class ActionableHiringLeadTests(unittest.TestCase):
         )
         self.assertFalse(is_actionable_hiring_lead(result, threshold=0.75))
 
+    def test_spam_is_never_actionable(self) -> None:
+        result = PredictionResult(
+            label=IntentEnum.SPAM_OTHER,
+            confidence=0.99,
+            latency_ms=8.0,
+            source=SOURCE_ONNX,
+        )
+        self.assertFalse(is_actionable_hiring_lead(result, threshold=0.75))
+
+
+class PredictIntentTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        IntentClassifier.reset_instance()
+
+    def test_predict_intent_uses_singleton_classifier(self) -> None:
+        classifier = get_classifier()
+        expected = PredictionResult(
+            label=IntentEnum.HIRING_LEAD,
+            confidence=0.91,
+            latency_ms=11.0,
+            source=SOURCE_ONNX,
+        )
+        with patch.object(classifier, "predict", return_value=expected) as predict:
+            result = predict_intent("استخدام برنامه‌نویس", keywords=["استخدام"])
+        self.assertIs(result, expected)
+        predict.assert_called_once_with(
+            "استخدام برنامه‌نویس",
+            keywords=["استخدام"],
+            negative_keywords=None,
+        )
+
+
+class SampleSeparationTests(unittest.TestCase):
+    @unittest.skipUnless(ONNX_PATH.is_file(), "ONNX weights are not present")
+    def test_separates_hiring_seeking_and_spam(self) -> None:
+        samples = [
+            (
+                IntentEnum.HIRING_LEAD,
+                "استخدام ادمین حرفه‌ای اینستاگرام، تمام‌وقت، حقوق توافقی + بیمه.",
+            ),
+            (
+                IntentEnum.HIRING_LEAD,
+                "نیازمند یک متخصص سئو برای بهبود رتبه سایت فروشگاهی هستیم.",
+            ),
+            (
+                IntentEnum.SEEKING_JOB,
+                "برنامه‌نویس بک‌اند هستم با ۲ سال تجربه. آماده همکاری پروژه‌ای هستم.",
+            ),
+            (
+                IntentEnum.SEEKING_JOB,
+                "طراح UI/UX با ۳ سال سابقه هستم. نمونه کار در پیوی موجوده.",
+            ),
+            (
+                IntentEnum.SPAM_OTHER,
+                "سلام بچه‌ها کسی میدونه بهترین لپ‌تاپ برای ادیت ویدیو چیه؟",
+            ),
+            (
+                IntentEnum.SPAM_OTHER,
+                "فروش ویژه فالوور اینستاگرام + لایک ایرانی، تحویل فوری.",
+            ),
+        ]
+        classifier = get_classifier()
+        for expected, text in samples:
+            with self.subTest(expected=expected.name, text=text[:40]):
+                result = classifier.predict(text)
+                self.assertEqual(result.source, SOURCE_ONNX)
+                self.assertEqual(result.label, expected)
+                self.assertGreaterEqual(result.confidence, 0.75)
+
 
 if __name__ == "__main__":
     unittest.main()
+
