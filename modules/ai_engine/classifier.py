@@ -225,3 +225,30 @@ class IntentClassifier:
 def get_classifier() -> IntentClassifier:
     """Return the process-wide classifier singleton."""
     return IntentClassifier()
+
+
+def predict_intent(
+    text: str,
+    *,
+    keywords: list[str] | None = None,
+    negative_keywords: list[str] | None = None,
+) -> PredictionResult:
+    """Run the singleton classifier on one message."""
+    return get_classifier().predict(
+        text,
+        keywords=keywords,
+        negative_keywords=negative_keywords,
+    )
+
+
+def is_actionable_hiring_lead(
+    result: PredictionResult,
+    threshold: float | None = None,
+) -> bool:
+    """True when the model calls a real hiring lead at or above the threshold."""
+    if threshold is None:
+        threshold = get_settings().ai_confidence_threshold
+    return (
+        result.label == IntentEnum.HIRING_LEAD
+        and result.confidence >= threshold
+    )

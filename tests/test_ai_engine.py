@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.config import get_settings
-from modules.ai_engine.classifier import IntentClassifier, get_classifier
+from modules.ai_engine.classifier import (
+    IntentClassifier,
+    get_classifier,
+    is_actionable_hiring_lead,
+)
 from modules.ai_engine.fallback import fallback_to_keywords
 from modules.ai_engine.labels import IntentEnum
 from modules.ai_engine.schemas import (
@@ -17,6 +21,7 @@ from modules.ai_engine.schemas import (
     SOURCE_ERROR,
     SOURCE_KEYWORDS,
     SOURCE_ONNX,
+    PredictionResult,
 )
 from modules.ai_engine.tokenizer import Tokenizer
 
@@ -139,6 +144,35 @@ class ClassifierTests(unittest.TestCase):
                 self.assertEqual(result.label, expected)
                 self.assertGreater(result.confidence, 0.9)
                 self.assertGreater(result.latency_ms, 0.0)
+
+
+class ActionableHiringLeadTests(unittest.TestCase):
+    def test_hiring_at_threshold_is_actionable(self) -> None:
+        result = PredictionResult(
+            label=IntentEnum.HIRING_LEAD,
+            confidence=0.75,
+            latency_ms=10.0,
+            source=SOURCE_ONNX,
+        )
+        self.assertTrue(is_actionable_hiring_lead(result, threshold=0.75))
+
+    def test_hiring_below_threshold_is_rejected(self) -> None:
+        result = PredictionResult(
+            label=IntentEnum.HIRING_LEAD,
+            confidence=0.749,
+            latency_ms=10.0,
+            source=SOURCE_ONNX,
+        )
+        self.assertFalse(is_actionable_hiring_lead(result, threshold=0.75))
+
+    def test_seeking_job_is_never_actionable(self) -> None:
+        result = PredictionResult(
+            label=IntentEnum.SEEKING_JOB,
+            confidence=0.99,
+            latency_ms=10.0,
+            source=SOURCE_ONNX,
+        )
+        self.assertFalse(is_actionable_hiring_lead(result, threshold=0.75))
 
 
 if __name__ == "__main__":

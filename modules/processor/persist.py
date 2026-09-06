@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from core.database import get_session_factory
 from core.logger import setup_logging
+from modules.ai_engine.schemas import PredictionResult
 from modules.processor.matching import MatchResult
 from shared.models import Lead, Message, Person, Source, User
 
@@ -28,10 +29,36 @@ def _parse_message_date(value) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def build_lead_evidence(
+    payload: dict,
+    match_result: MatchResult,
+    prediction: PredictionResult | None = None,
+) -> dict:
+    """JSON payload stored on Lead.evidence_json, including AI metadata."""
+    evidence = {
+        "matched_keywords": match_result.matched_keywords,
+        "chat_title": payload.get("chat_title"),
+        "sender_username": payload.get("sender_username"),
+    }
+    if prediction is not None:
+        evidence.update(
+            {
+                "ai_label": int(prediction.label),
+                "ai_label_name": prediction.label.name,
+                "ai_confidence": float(prediction.confidence),
+                "ai_latency_ms": float(prediction.latency_ms),
+                "ai_source": prediction.source,
+            }
+        )
+    return evidence
+
+
 async def persist_matched_lead(
-    payload: dict, match_result: MatchResult
+    payload: dict,
+    match_result: MatchResult,
+    prediction: PredictionResult | None = None,
 ) -> tuple[int | None, int | None, bool]:
-    """Insert lead rows and return (lead_id, telegram_chat_id, is_notifier_active)."""
+    """Insert lead rows (with AI metadata) and return (lead_id, chat_id, notifier)."""
     user_id = payload.get("user_id")
     chat_id = payload.get("chat_id")
     sender_id = payload.get("sender_id")
@@ -84,11 +111,7 @@ async def persist_matched_lead(
             person_id=person.id,
             intent_score=float(match_result.score),
             lead_level=match_result.lead_level,
-            evidence_json={
-                "matched_keywords": match_result.matched_keywords,
-                "chat_title": payload.get("chat_title"),
-                "sender_username": payload.get("sender_username"),
-            },
+            evidence_json=build_lead_evidence(payload, match_result, prediction),
         )
         db.add(lead)
         await db.commit()

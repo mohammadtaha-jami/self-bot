@@ -2,6 +2,7 @@
 
 from core.database import run_async_isolated
 from core.logger import setup_logging
+from modules.ai_engine import is_actionable_hiring_lead, predict_intent
 from modules.processor.matching import MatchConfig, match_keywords
 from modules.processor.nlp import clean_text
 from modules.processor.persist import persist_matched_lead
@@ -22,7 +23,7 @@ def process_raw_message(payload: dict) -> dict:
     """
     Full processing pipeline for a single raw message.
 
-    Steps: Extract -> Load Presets -> Clean text -> Match keywords -> Evaluate lead level.
+    Steps: Extract -> Load Presets -> Clean text -> Match keywords -> AI classify -> Persist / notify.
 
     Args:
         payload: Dict containing message text, metadata, business_type, custom keywords, etc.
@@ -124,19 +125,60 @@ def process_raw_message(payload: dict) -> dict:
             "message_id": message_id,
         }
 
-    # ۵. شناسایی لید موفق
+    # ۵. دسته‌بندی هوشمند پس از عبور از فیلتر کلمات کلیدی
+    prediction = predict_intent(
+        raw_text,
+        keywords=keywords,
+        negative_keywords=negative_keywords,
+    )
+    ai_payload = {
+        "ai_label": int(prediction.label),
+        "ai_label_name": prediction.label.name,
+        "ai_confidence": prediction.confidence,
+        "ai_latency_ms": prediction.latency_ms,
+        "ai_source": prediction.source,
+    }
     logger.info(
-        "Lead detected! Msg: %s | Level: %s | Score: %.1f | Keywords: %s",
+        "AI classified message %s as %s (%.3f, %.1fms, source=%s)",
+        message_id,
+        prediction.label.name,
+        prediction.confidence,
+        prediction.latency_ms,
+        prediction.source,
+    )
+
+    if not is_actionable_hiring_lead(prediction):
+        logger.info(
+            "Message %s ignored by AI gate: %s confidence=%.3f",
+            message_id,
+            prediction.label.name,
+            prediction.confidence,
+        )
+        return {
+            "status": "ignored",
+            "reason": "ai_not_hiring_lead",
+            "message_id": message_id,
+            "matched_keywords": match_result.matched_keywords,
+            "score": match_result.score,
+            **ai_payload,
+        }
+
+    # ۶. ثبت لید معتبر (HIRING_LEAD با اطمینان کافی)
+    logger.info(
+        "Lead detected! Msg: %s | Level: %s | Score: %.1f | Keywords: %s | AI: %s %.3f",
         message_id,
         match_result.lead_level.value,
         match_result.score,
         match_result.matched_keywords,
+        prediction.label.name,
+        prediction.confidence,
     )
 
     lead_data = {
         "lead_level": match_result.lead_level.value,
         "matched_keywords": match_result.matched_keywords,
         "score": match_result.score,
+        **ai_payload,
     }
 
     lead_id = None
@@ -144,7 +186,7 @@ def process_raw_message(payload: dict) -> dict:
     is_notifier_active = False
     try:
         lead_id, telegram_chat_id, is_notifier_active = run_async_isolated(
-            persist_matched_lead(payload, match_result)
+            persist_matched_lead(payload, match_result, prediction)
         )
     except Exception:
         logger.exception("Failed to persist lead for message %s", message_id)
@@ -172,6 +214,7 @@ def process_raw_message(payload: dict) -> dict:
         "matched_keywords": match_result.matched_keywords,
         "score": match_result.score,
         "cleaned_text": cleaned_text,
+        **ai_payload,
     }
 
 
