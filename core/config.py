@@ -67,6 +67,12 @@ class Settings(BaseSettings):
         raw = (self.bot_username or "").strip().lstrip("@")
         return raw or None
 
+    # AI engine (Phase 7 — ParsBERT / ONNX)
+    ai_model_dir: str = "models/parsbert_classifier"
+    ai_confidence_threshold: float = 0.75
+    ai_enabled: bool = True
+    ai_fallback_to_keywords: bool = True
+
     @property
     def database_url(self) -> str:
         """Async SQLAlchemy connection URL for PostgreSQL."""
