@@ -188,7 +188,12 @@ python -m modules.processor.worker
 
 # Telegram listener
 python -m modules.listener.app
+
+#Notifier Bot
+python -m modules.notifier.bot
 ```
+
+
 
 Full stack via Compose (after a `Dockerfile` is in place):
 
