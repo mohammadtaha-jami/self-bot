@@ -12,6 +12,7 @@ import onnxruntime as ort
 
 from core.config import get_settings
 from core.logger import setup_logging
+from logger.tracker import log_inference
 from modules.ai_engine.fallback import fallback_to_keywords
 from modules.ai_engine.labels import IntentEnum
 from modules.ai_engine.schemas import (
@@ -117,7 +118,11 @@ class IntentClassifier:
         self._output_names = [item.name for item in session.get_outputs()]
         logger.info("Loaded ONNX intent classifier from %s", onnx_path)
 
-    def _predict_onnx(self, text: str) -> PredictionResult:
+    def _predict_onnx(
+        self,
+        text: str,
+        matched_keyword: str = "",
+    ) -> PredictionResult:
         self._ensure_loaded()
         assert self._session is not None
         assert self._tokenizer is not None
@@ -139,6 +144,13 @@ class IntentClassifier:
             label = IntentEnum(predicted)
         except ValueError as exc:
             raise RuntimeError(f"Unexpected class index {predicted}") from exc
+
+        log_inference(
+            text=text,
+            matched_keyword=matched_keyword,
+            probabilities=probabilities,
+            threshold=get_settings().ai_confidence_threshold,
+        )
 
         return PredictionResult(
             label=label,
@@ -167,6 +179,7 @@ class IntentClassifier:
         *,
         keywords: list[str] | None = None,
         negative_keywords: list[str] | None = None,
+        matched_keyword: str | None = None,
     ) -> PredictionResult:
         started = time.perf_counter()
         settings = get_settings()
@@ -205,7 +218,7 @@ class IntentClassifier:
             )
 
         try:
-            return finish(self._predict_onnx(stripped))
+            return finish(self._predict_onnx(stripped, matched_keyword or ""))
         except Exception as exc:
             logger.exception("ONNX intent prediction failed")
             if settings.ai_fallback_to_keywords:
@@ -232,13 +245,16 @@ def predict_intent(
     *,
     keywords: list[str] | None = None,
     negative_keywords: list[str] | None = None,
+    matched_keyword: str | None = None,
 ) -> PredictionResult:
     """Run the singleton classifier on one message."""
-    return get_classifier().predict(
-        text,
-        keywords=keywords,
-        negative_keywords=negative_keywords,
-    )
+    kwargs: dict = {
+        "keywords": keywords,
+        "negative_keywords": negative_keywords,
+    }
+    if matched_keyword is not None:
+        kwargs["matched_keyword"] = matched_keyword
+    return get_classifier().predict(text, **kwargs)
 
 
 def is_actionable_hiring_lead(

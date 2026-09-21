@@ -32,7 +32,7 @@ Sales teams miss buying-intent messages buried in Telegram groups. This system l
 
 It is a **modular monolith**: one codebase, four bounded modules (`listener`, `processor`, `notification`, `admin_and_api`), shared Postgres models, and Redis as the Celery broker.
 
-> Replace `docs/banner.png` with your logo or architecture diagram.
+> Replace `asstes/selfbotEN.png` with your logo or architecture diagram.
 
 **Demo / screenshots:** _not published yet_ — add links here when available.
 

@@ -130,6 +130,7 @@ def process_raw_message(payload: dict) -> dict:
         raw_text,
         keywords=keywords,
         negative_keywords=negative_keywords,
+        matched_keyword=", ".join(match_result.matched_keywords),
     )
     ai_payload = {
         "ai_label": int(prediction.label),
